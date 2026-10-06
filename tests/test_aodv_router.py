@@ -109,11 +109,24 @@ def test_no_hidden_pathfinding():
     assert router.has_valid_route("H") is False
     assert router.get_next_hop("H") is None
 
-def test_route_discovery_placeholder():
-    """Route discovery API foundation - raises NotImplementedError to prevent silent execution."""
+def test_route_discovery_initiation():
+    """Route discovery initiates RREQ with correct values."""
     topology, _, _ = setup_topology()
     router = AODVRouter("A", topology)
     
-    with pytest.raises(NotImplementedError):
-        router.initiate_route_discovery("H")
+    packet = router.initiate_route_discovery("H")
+    
+    assert packet.packet_type.name == "RREQ"
+    assert packet.source_id == "A"
+    assert packet.destination_id == "H"
+    
+    payload = packet.payload
+    assert payload.source_id == "A"
+    assert payload.destination_id == "H"
+    assert payload.source_sequence_number == 2 # 1 incremented to 2
+    assert payload.broadcast_id == 1
+    assert payload.hop_count == 0
+    
+    # Verify the router recorded its own RREQ
+    assert router.has_seen_rreq("A", 1) is True
 

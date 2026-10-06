@@ -65,6 +65,25 @@ class Packet:
         else:
             self.status = PacketStatus.IN_TRANSIT
 
+    def clone(self) -> 'Packet':
+        """
+        Create a clone of the packet (e.g., for broadcasting).
+        The clone has a new packet_id, but retains the same payload, route history, and hop count.
+        """
+        import copy
+        new_packet = Packet(
+            source_id=self.source_id,
+            destination_id=self.destination_id,
+            payload=copy.deepcopy(self.payload),
+            packet_type=self.packet_type,
+            ttl=self.ttl
+        )
+        new_packet.current_node = self.current_node
+        new_packet.hop_count = self.hop_count
+        new_packet.route_history = list(self.route_history)
+        new_packet.status = self.status
+        return new_packet
+
     def mark_delivered(self):
         """Mark the packet successfully delivered to its destination."""
         self.status = PacketStatus.DELIVERED

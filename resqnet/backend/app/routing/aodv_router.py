@@ -64,12 +64,93 @@ class AODVRouter(BaseRouter):
         """
         self.seen_rreqs.add((source_id, broadcast_id))
 
-    def initiate_route_discovery(self, destination_id: str):
+    def handle_packet(self, packet: Packet) -> list[str]:
         """
-        API foundation to trigger AODV Route Discovery.
+        Process an incoming packet and determine where it should be forwarded.
+        """
+        if packet.packet_type.name == "RREQ":
+            return self._handle_rreq(packet)
+        else:
+            # Data packets use normal unicast forwarding
+            next_hop = self.get_next_hop(packet.destination_id)
+            if next_hop:
+                return [next_hop]
+            return []
+
+    def _handle_rreq(self, packet: Packet) -> list[str]:
+        from resqnet.backend.app.models.aodv_payloads import RREQPayload
+        from resqnet.backend.app.models.packet import PacketType
         
-        Currently a placeholder. Does NOT implement RREQ generation
-        or broadcasting yet.
+        payload: RREQPayload = packet.payload
+        
+        # 1. Duplicate detection
+        if self.has_seen_rreq(payload.source_id, payload.broadcast_id):
+            is_source_initiation = (self.node_id == payload.source_id and packet.hop_count == 0)
+            if not is_source_initiation:
+                return []
+            
+        # 2. Record it to prevent future duplicates
+        self.record_rreq(payload.source_id, payload.broadcast_id)
+        
+        # 3. Setup reverse route to the source
+        prev_hop = packet.route_history[-2] if len(packet.route_history) >= 2 else None
+        
+        if prev_hop:
+            self.routing_table.add_or_update_route(
+                destination_id=payload.source_id,
+                next_hop=prev_hop,
+                sequence_number=payload.source_sequence_number,
+                hop_count=payload.hop_count + 1
+            )
+            
+        # 4. Check if we are the destination
+        if self.node_id == payload.destination_id:
+            # We are the destination! In Task 5, we just stop propagating.
+            return []
+            
+        # 5. Increment RREQ protocol hop count (only at intermediate nodes)
+        if self.node_id != payload.source_id:
+            payload.hop_count += 1
+            
+        # 6. Broadcast to all active neighbors (excluding the one we just received it from)
+        my_node = self.topology.get_node_by_id(self.node_id)
+        active_neighbors = self.topology.get_active_neighbors(my_node.ip_address)
+        
+        next_hops = []
+        for neighbor in active_neighbors:
+            if neighbor.node_id != prev_hop:
+                next_hops.append(neighbor.node_id)
+                
+        return next_hops
+
+    def initiate_route_discovery(self, destination_id: str) -> Packet:
         """
-        # Explicitly indicates route discovery is not yet implemented
-        raise NotImplementedError("Route discovery is not yet implemented.")
+        Trigger AODV Route Discovery by generating an RREQ packet.
+        Returns the generated RREQ Packet.
+        """
+        self.increment_sequence_number()
+        broadcast_id = self.get_next_broadcast_id()
+        
+        # Record our own RREQ to prevent processing it if it loops back
+        self.record_rreq(self.node_id, broadcast_id)
+        
+        from resqnet.backend.app.models.aodv_payloads import RREQPayload
+        from resqnet.backend.app.models.packet import PacketType
+        
+        payload = RREQPayload(
+            source_id=self.node_id,
+            destination_id=destination_id,
+            source_sequence_number=self.node_sequence_number,
+            destination_sequence_number=0, # Unknown sequence number for destination initially
+            broadcast_id=broadcast_id,
+            hop_count=0
+        )
+        
+        packet = Packet(
+            source_id=self.node_id,
+            destination_id=destination_id,
+            payload=payload,
+            packet_type=PacketType.RREQ
+        )
+        
+        return packet
