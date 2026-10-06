@@ -85,7 +85,7 @@ class SimulationEngine:
             if packet.status not in [PacketStatus.DELIVERED, PacketStatus.DROPPED, PacketStatus.FAILED]:
                 packet.mark_dropped()
                 # For static router tests compatibility
-                if packet.packet_type.name != "RREQ":
+                if packet.packet_type.name not in ["RREQ", "RERR"]:
                     self._log_event("NEXT_HOP_UNAVAILABLE")
                 self._log_event("PACKET_DROPPED")
             return
@@ -99,7 +99,7 @@ class SimulationEngine:
         
         if not valid_next_hops:
             packet.mark_dropped()
-            if packet.packet_type.name != "RREQ":
+            if packet.packet_type.name not in ["RREQ", "RERR"]:
                 self._log_event("NEXT_HOP_UNAVAILABLE")
             self._log_event("PACKET_DROPPED")
             return

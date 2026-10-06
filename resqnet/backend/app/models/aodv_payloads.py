@@ -58,3 +58,17 @@ class RREPPayload:
         self.destination_sequence_number = destination_sequence_number
         self.originator_id = originator_id
         self.hop_count = hop_count
+
+class RERRPayload:
+    """
+    Payload for an AODV Route Error (RERR) control message.
+    """
+    def __init__(
+        self,
+        unreachable_destinations: list[tuple[str, int]]
+    ):
+        if not unreachable_destinations:
+            raise ValueError("Must provide at least one unreachable destination")
+        
+        # List of (destination_id, destination_sequence_number)
+        self.unreachable_destinations = unreachable_destinations

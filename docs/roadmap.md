@@ -16,7 +16,7 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
   - `pytest` suite for models.
   - CLI script proving a packet can travel `A → B → C → H` and fails when `B` is down.
 
-## Phase 2: AODV Route Discovery
+## Phase 2: AODV Route Discovery (Complete)
 *Goal: Implement RFC 3561 compliant AODV route discovery logic.*
 - **Tasks**:
   - Implement `RoutingTable` and entries.
@@ -29,7 +29,7 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
   - `A` has no initial route to `H`.
   - `A` initiates `RREQ` → `H` replies with `RREP` → `A` forwards `DATA` via discovered route.
 
-## Phase 3: Failure & Route Recovery
+## Phase 3: Failure & Route Recovery (Complete - Merged into Phase 2)
 *Goal: Make the network disaster-resilient.*
 - **Tasks**:
   - Implement Node/Link failure detection during forwarding.
