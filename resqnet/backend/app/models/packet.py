@@ -17,12 +17,14 @@ class PacketStatus(Enum):
     DROPPED = auto()
     FAILED = auto()
 
+from typing import Any
+
 class Packet:
     """
     Represents a discrete message/data chunk traveling through the network.
     Records its actual movement across nodes.
     """
-    def __init__(self, source_id: str, destination_id: str, payload: str, packet_type: PacketType = PacketType.DATA, ttl: int = 64):
+    def __init__(self, source_id: str, destination_id: str, payload: Any, packet_type: PacketType = PacketType.DATA, ttl: int = 64):
         if not source_id or not destination_id:
             raise ValueError("Source and destination identifiers must be provided.")
         if packet_type == PacketType.DATA and not payload:
