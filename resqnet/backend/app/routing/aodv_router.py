@@ -150,15 +150,18 @@ class AODVRouter(BaseRouter):
         prev_hop = packet.route_history[-2] if len(packet.route_history) >= 2 else None
         
         if prev_hop:
-            self.routing_table.add_or_update_route(
+            updated = self.routing_table.add_or_update_route(
                 destination_id=payload.destination_id,
                 next_hop=prev_hop,
                 sequence_number=payload.destination_sequence_number,
                 hop_count=payload.hop_count + 1
             )
+            if updated:
+                self.events.append(f"FORWARD_ROUTE_INSTALLED: node={self.node_id} dest={payload.destination_id} next={prev_hop} hops={payload.hop_count + 1}")
             
         # 2. Check if we are the RREQ source (RREP destination)
         if self.node_id == payload.originator_id:
+            self.events.append(f"ROUTE_DISCOVERY_COMPLETED: node={self.node_id} dest={payload.destination_id}")
             return []
             
         # 3. Increment RREP hop count (only at intermediate nodes)

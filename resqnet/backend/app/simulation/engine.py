@@ -76,6 +76,11 @@ class SimulationEngine:
                 self.pending_messages.append(new_packet)
             router.generated_packets.clear()
             
+        if hasattr(router, 'events') and router.events:
+            for event in router.events:
+                self._log_event(event)
+            router.events.clear()
+            
         if not next_hops:
             if packet.status not in [PacketStatus.DELIVERED, PacketStatus.DROPPED, PacketStatus.FAILED]:
                 packet.mark_dropped()

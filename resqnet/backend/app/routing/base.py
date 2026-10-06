@@ -12,6 +12,7 @@ class BaseRouter(ABC):
         self.node_id = node_id
         self.topology = topology
         self.generated_packets = []
+        self.events = []
 
     @abstractmethod
     def get_next_hop(self, destination_id: str) -> Optional[str]:
