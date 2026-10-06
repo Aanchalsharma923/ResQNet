@@ -70,6 +70,8 @@ class AODVRouter(BaseRouter):
         """
         if packet.packet_type.name == "RREQ":
             return self._handle_rreq(packet)
+        elif packet.packet_type.name == "RREP":
+            return self._handle_rrep(packet)
         else:
             # Data packets use normal unicast forwarding
             next_hop = self.get_next_hop(packet.destination_id)
@@ -78,7 +80,7 @@ class AODVRouter(BaseRouter):
             return []
 
     def _handle_rreq(self, packet: Packet) -> list[str]:
-        from resqnet.backend.app.models.aodv_payloads import RREQPayload
+        from resqnet.backend.app.models.aodv_payloads import RREQPayload, RREPPayload
         from resqnet.backend.app.models.packet import PacketType
         
         payload: RREQPayload = packet.payload
@@ -105,7 +107,24 @@ class AODVRouter(BaseRouter):
             
         # 4. Check if we are the destination
         if self.node_id == payload.destination_id:
-            # We are the destination! In Task 5, we just stop propagating.
+            # Generate RREP
+            self.node_sequence_number = max(self.node_sequence_number, payload.destination_sequence_number)
+            
+            rrep_payload = RREPPayload(
+                destination_id=self.node_id,
+                destination_sequence_number=self.node_sequence_number,
+                originator_id=payload.source_id,
+                hop_count=0
+            )
+            
+            rrep_packet = Packet(
+                source_id=self.node_id,
+                destination_id=payload.source_id,
+                payload=rrep_payload,
+                packet_type=PacketType.RREP
+            )
+            
+            self.generated_packets.append(rrep_packet)
             return []
             
         # 5. Increment RREQ protocol hop count (only at intermediate nodes)
@@ -122,6 +141,36 @@ class AODVRouter(BaseRouter):
                 next_hops.append(neighbor.node_id)
                 
         return next_hops
+
+    def _handle_rrep(self, packet: Packet) -> list[str]:
+        from resqnet.backend.app.models.aodv_payloads import RREPPayload
+        payload: RREPPayload = packet.payload
+        
+        # 1. Setup forward route to the destination
+        prev_hop = packet.route_history[-2] if len(packet.route_history) >= 2 else None
+        
+        if prev_hop:
+            self.routing_table.add_or_update_route(
+                destination_id=payload.destination_id,
+                next_hop=prev_hop,
+                sequence_number=payload.destination_sequence_number,
+                hop_count=payload.hop_count + 1
+            )
+            
+        # 2. Check if we are the RREQ source (RREP destination)
+        if self.node_id == payload.originator_id:
+            return []
+            
+        # 3. Increment RREP hop count (only at intermediate nodes)
+        if self.node_id != payload.destination_id:
+            payload.hop_count += 1
+        
+        # 4. Forward RREP along the reverse route back to the source
+        next_hop = self.get_next_hop(payload.originator_id)
+        if next_hop:
+            return [next_hop]
+            
+        return []
 
     def initiate_route_discovery(self, destination_id: str) -> Packet:
         """
