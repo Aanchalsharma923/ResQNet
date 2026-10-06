@@ -18,17 +18,19 @@ class SimulationEngine:
         self.events: List[str] = []
         self.pending_messages: List[Packet] = []
 
-    def _log_event(self, event: str):
+    def _log_event(self, event: str, packet: Packet = None):
         self.events.append(event)
+        if hasattr(self, 'event_callback') and self.event_callback:
+            self.event_callback(event, packet)
         
     def send_packet(self, packet: Packet):
         """
         Simulates the journey of a packet from its current_node to its destination_id.
         Adds to pending messages queue and processes until empty.
         """
-        self._log_event("PACKET_CREATED")
+        self._log_event("PACKET_CREATED", packet)
         if packet.packet_type.name == "RREQ":
-            self._log_event("RREQ_CREATED")
+            self._log_event("RREQ_CREATED", packet)
             
         self.pending_messages.append(packet)
         self._process_queue()
@@ -51,11 +53,11 @@ class SimulationEngine:
         if current == packet.destination_id:
             if packet.packet_type.name == "DATA":
                 packet.mark_delivered()
-                self._log_event("PACKET_DELIVERED")
+                self._log_event("PACKET_DELIVERED", packet)
                 return
             elif packet.packet_type.name == "RREQ":
                 packet.mark_delivered()
-                self._log_event("RREQ_REACHED_DESTINATION")
+                self._log_event("RREQ_REACHED_DESTINATION", packet)
                 # AODV routers need to process the RREQ to install reverse routes
                 # and generate RREPs.
                 pass
@@ -64,7 +66,7 @@ class SimulationEngine:
         router = self.routers.get(current)
         if not router:
             packet.mark_dropped()
-            self._log_event("PACKET_DROPPED")
+            self._log_event("PACKET_DROPPED", packet)
             return
             
         # 3. Ask the router for the next hops
@@ -78,7 +80,7 @@ class SimulationEngine:
             
         if hasattr(router, 'events') and router.events:
             for event in router.events:
-                self._log_event(event)
+                self._log_event(event, packet)
             router.events.clear()
             
         if not next_hops:
@@ -86,8 +88,8 @@ class SimulationEngine:
                 packet.mark_dropped()
                 # For static router tests compatibility
                 if packet.packet_type.name not in ["RREQ", "RERR"]:
-                    self._log_event("NEXT_HOP_UNAVAILABLE")
-                self._log_event("PACKET_DROPPED")
+                    self._log_event("NEXT_HOP_UNAVAILABLE", packet)
+                self._log_event("PACKET_DROPPED", packet)
             return
             
         # 4. Verify that the next hops are active neighbors in NetworkTopology
@@ -100,8 +102,8 @@ class SimulationEngine:
         if not valid_next_hops:
             packet.mark_dropped()
             if packet.packet_type.name not in ["RREQ", "RERR"]:
-                self._log_event("NEXT_HOP_UNAVAILABLE")
-            self._log_event("PACKET_DROPPED")
+                self._log_event("NEXT_HOP_UNAVAILABLE", packet)
+            self._log_event("PACKET_DROPPED", packet)
             return
             
         # 5. Move the packet to those nodes
@@ -112,14 +114,14 @@ class SimulationEngine:
             out_packet = packet if i == len(valid_next_hops) - 1 else original_packet.clone()
             
             if out_packet.packet_type.name == "RREQ":
-                self._log_event(f"RREQ_BROADCAST {current} -> {hop}")
+                self._log_event(f"RREQ_BROADCAST {current} -> {hop}", out_packet)
             else:
-                self._log_event(f"FORWARD {current} -> {hop}")
+                self._log_event(f"FORWARD {current} -> {hop}", out_packet)
                 
             out_packet.sender_id = current
             out_packet.move_to(hop)
             
             if out_packet.status == PacketStatus.DROPPED:
-                self._log_event("PACKET_DROPPED")
+                self._log_event("PACKET_DROPPED", out_packet)
             else:
                 self.pending_messages.append(out_packet)
