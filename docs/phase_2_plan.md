@@ -109,7 +109,7 @@ Phase 2 implements a genuine Ad hoc On-Demand Distance Vector (AODV) routing pro
 - **Verification Command**: `pytest -v`
 - **Git Commit Boundary**: Yes.
 
-### Task 9: Phase 2 Documentation and Review
+### Task 9: Phase 2 Documentation and Review (Completed)
 - **Objective**: Update all documentation reflecting the new AODV capability.
 - **Files Affected**: `README.md`, `docs/roadmap.md`, `docs/phase_2_plan.md`, `.project_state.md`
 - **Implementation Details**: Document how the AODV implementation works, how to test it, and how it differentiates from the StaticRouter. Ensure Phase 2 boundary definitions are respected.
@@ -117,6 +117,10 @@ Phase 2 implements a genuine Ad hoc On-Demand Distance Vector (AODV) routing pro
 ### Task 10: Disaster Resilience & RERR (Completed)
 - **Objective**: Implement disaster resilience via route invalidation, RERR generation/propagation, and organic route rediscovery.
 - **Implementation Details**: Handle node and link failures gracefully by invalidating broken routes and triggering a new sequence of AODV discovery using the correct sequence numbers.
+
+### Task 11: Architectural Hardening & Final Audit (Completed)
+- **Objective**: Freeze the networking core by ensuring no reliance on explicit route history, passing all disaster recovery test suites, and confirming strict adherence to no-cheating protocol constraints.
+- **Implementation Details**: `sender_id` semantics replaced `route_history` for routing logic. Validated isolation of node failures and link failures. Audit confirmed ZERO usage of shortest-path algorithms.
 
 ---
 

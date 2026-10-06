@@ -116,6 +116,7 @@ class SimulationEngine:
             else:
                 self._log_event(f"FORWARD {current} -> {hop}")
                 
+            out_packet.sender_id = current
             out_packet.move_to(hop)
             
             if out_packet.status == PacketStatus.DROPPED:

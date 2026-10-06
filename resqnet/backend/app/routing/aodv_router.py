@@ -144,8 +144,8 @@ class AODVRouter(BaseRouter):
         payload: RERRPayload = packet.payload
         
         affected = False
-        prev_hop = packet.route_history[-2] if len(packet.route_history) >= 2 else None
-        is_source = (self.node_id == packet.source_id and len(packet.route_history) == 1)
+        prev_hop = packet.sender_id
+        is_source = (self.node_id == packet.source_id and packet.sender_id is None)
         
         if not is_source:
             for dest, seq_num in payload.unreachable_destinations:
@@ -185,7 +185,7 @@ class AODVRouter(BaseRouter):
         self.record_rreq(payload.source_id, payload.broadcast_id)
         
         # 3. Setup reverse route to the source
-        prev_hop = packet.route_history[-2] if len(packet.route_history) >= 2 else None
+        prev_hop = packet.sender_id
         
         if prev_hop:
             self.routing_table.add_or_update_route(
@@ -237,7 +237,7 @@ class AODVRouter(BaseRouter):
         payload: RREPPayload = packet.payload
         
         # 1. Setup forward route to the destination
-        prev_hop = packet.route_history[-2] if len(packet.route_history) >= 2 else None
+        prev_hop = packet.sender_id
         
         if prev_hop:
             updated = self.routing_table.add_or_update_route(

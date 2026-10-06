@@ -37,6 +37,7 @@ class Packet:
         self.packet_type = packet_type
         
         self.current_node = source_id
+        self.sender_id: str | None = None
         self.hop_count = 0
         # Route history strictly records ACTUAL movement, never pre-calculated routes
         self.route_history = [source_id]
@@ -79,6 +80,7 @@ class Packet:
             ttl=self.ttl
         )
         new_packet.current_node = self.current_node
+        new_packet.sender_id = self.sender_id
         new_packet.hop_count = self.hop_count
         new_packet.route_history = list(self.route_history)
         new_packet.status = self.status
