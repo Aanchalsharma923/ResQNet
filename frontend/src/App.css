@@ -1,0 +1,307 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: #121212;
+  color: #e0e0e0;
+}
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #333;
+}
+
+.dashboard-header h1 {
+  font-size: 1.5rem;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.status-badge.connected { background: #1b5e20; color: #a5d6a7; }
+.status-badge.connecting, .status-badge.reconnecting { background: #e65100; color: #ffe082; }
+.status-badge.disconnected { background: #b71c1c; color: #ef9a9a; }
+
+.dashboard-grid {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+}
+
+.col-main {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.col-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 350px;
+}
+
+.panel {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel h2 {
+  font-size: 1.1rem;
+  margin-bottom: 15px;
+  color: #bbb;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.topology-panel {
+  flex: 2;
+}
+
+.panel-row {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+}
+
+.panel-row > .panel {
+  flex: 1;
+}
+
+/* Event Log */
+.event-log {
+  flex: 1;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.85rem;
+  background: #000;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.log-entry {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #222;
+}
+
+.log-time {
+  color: #888;
+  margin-right: 10px;
+}
+
+.log-type {
+  font-weight: bold;
+  color: #4fc3f7;
+}
+
+/* Controls */
+.controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+button {
+  background: #333;
+  color: #fff;
+  border: 1px solid #555;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+button:hover {
+  background: #444;
+}
+
+button.danger {
+  background: #b71c1c;
+  border-color: #d32f2f;
+}
+
+button.danger:hover {
+  background: #c62828;
+}
+
+button.success {
+  background: #1b5e20;
+  border-color: #388e3c;
+}
+
+button.success:hover {
+  background: #2e7d32;
+}
+
+button.primary {
+  background: #1565c0;
+  border-color: #1976d2;
+}
+
+button.primary:hover {
+  background: #1976d2;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.85rem;
+  color: #999;
+}
+
+input, select, textarea {
+  width: 100%;
+  background: #121212;
+  border: 1px solid #444;
+  color: #fff;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+/* Metrics */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.metric-item {
+  background: #252525;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 5px;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+}
+
+/* Topology SVG */
+.topology-svg {
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+}
+
+.node {
+  fill: #1565c0;
+  stroke: #fff;
+  stroke-width: 2;
+  transition: fill 0.3s;
+}
+
+.node.failed {
+  fill: #b71c1c;
+  stroke: #ff5252;
+}
+
+.node.hospital {
+  fill: #2e7d32;
+}
+
+.node-label {
+  fill: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.node-ip {
+  fill: #aaa;
+  font-size: 10px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.link {
+  stroke: #555;
+  stroke-width: 3;
+  transition: stroke 0.3s;
+}
+
+.link.failed {
+  stroke: #ff1744;
+  stroke-dasharray: 5, 5;
+  opacity: 0.5;
+}
+
+/* Packets */
+.packet {
+  r: 6;
+}
+.packet.rreq { fill: #ffb300; }
+.packet.rrep { fill: #43a047; }
+.packet.rerr { fill: #e53935; }
+.packet.data { fill: #039be5; }
+
+/* Dashboard Messages */
+.message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 200px;
+}
+
+.message-card {
+  background: #222;
+  border-left: 4px solid #1976d2;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.message-card.sos {
+  border-left-color: #d32f2f;
+  background: #3a1616;
+}
