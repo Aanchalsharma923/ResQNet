@@ -39,7 +39,7 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
 - **Verification**:
   - Hero Scenario: `A → B → C → H` is active. `B` fails. `AODV` detects failure, triggers RREQ, discovers `A → D → C → H`, and restores communication.
 
-## Phase 4: Metrics & Observability
+## Phase 4: Metrics & Observability (Complete)
 *Goal: Quantify network performance and resilience.*
 - **Tasks**:
   - Implement metrics collection for PDR (Packet Delivery Ratio), packet loss, and hop count.
@@ -55,13 +55,13 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
 - **Verification**:
   - Wireshark captures showing actual packets matching the simulation's intent.
 
-## Phase 6: FastAPI & WebSocket Backend
+## Phase 6: FastAPI & WebSocket Backend (Complete)
 *Goal: Expose the engine via standard web protocols.*
 - **Tasks**:
   - Create REST endpoints for topology management, simulation control, and metrics.
   - Create WebSocket endpoints to stream live events (RREQ, failures, packet movement).
 
-## Phase 7: React Frontend Visualization
+## Phase 7: React Frontend Visualization (Complete)
 *Goal: Visually demonstrate the network.*
 - **Tasks**:
   - Build React dashboard consuming FastAPI and WebSockets.

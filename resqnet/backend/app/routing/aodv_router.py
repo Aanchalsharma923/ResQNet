@@ -215,6 +215,7 @@ class AODVRouter(BaseRouter):
             )
             
             self.generated_packets.append(rrep_packet)
+            self.events.append(f"RREP_GENERATED: node={self.node_id}")
             return []
             
         # 5. Increment RREQ protocol hop count (only at intermediate nodes)
@@ -251,6 +252,7 @@ class AODVRouter(BaseRouter):
             
         # 2. Check if we are the RREQ source (RREP destination)
         if self.node_id == payload.originator_id:
+            self.events.append(f"RREP_RECEIVED: node={self.node_id} dest={payload.destination_id}")
             self.events.append(f"ROUTE_DISCOVERY_COMPLETED: node={self.node_id} dest={payload.destination_id}")
             return []
             

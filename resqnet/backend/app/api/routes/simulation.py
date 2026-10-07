@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import asyncio
 from resqnet.backend.app.models.api_models import (
     NetworkResponse, MessageSendRequest, MessageSendResponse, 
-    LinkActionRequest, MetricsResponse
+    LinkActionRequest, MetricsResponse, SOSMessageRequest
 )
 from resqnet.backend.app.services.simulation_service import simulation_service
 from resqnet.backend.app.services.broadcaster import broadcaster
@@ -64,6 +64,25 @@ def send_message(request: MessageSendRequest):
     )
     return result
 
+@router.post("/sos", response_model=MessageSendResponse)
+def send_sos(request: SOSMessageRequest):
+    result = simulation_service.send_sos(request.model_dump())
+    return result
+
+@router.get("/hospital/inbox")
+def get_hospital_inbox():
+    return simulation_service.get_hospital_inbox()
+
+@router.post("/hospital/respond", response_model=MessageSendResponse)
+def respond_hospital(request: MessageSendRequest):
+    # This just uses normal message send API but can be extended
+    result = simulation_service.send_message(
+        request.source,
+        request.destination,
+        {"type": "response", "message": request.message}
+    )
+    return result
+
 @router.websocket("/ws/simulation")
 async def websocket_simulation(websocket: WebSocket):
     await websocket.accept()
@@ -79,7 +98,7 @@ async def websocket_simulation(websocket: WebSocket):
         
         # Send initial state
         await websocket.send_json({
-            "type": "NETWORK_INITIALIZED",
+            "type": "INITIAL_STATE",
             "data": simulation_service.get_network_state()
         })
         

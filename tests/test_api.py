@@ -106,4 +106,5 @@ def test_send_message_integration():
     assert data2["packet"]["status"] == "DELIVERED"
     
     metrics = client.get("/api/metrics").json()
-    assert metrics["total_events"] > 0
+    assert metrics["packets_sent"] > 0
+    assert metrics["packets_delivered"] > 0

@@ -4,12 +4,14 @@ class Node:
     """
     Represents a single node in the network simulation.
     """
-    def __init__(self, node_id: str, ip_address: str, is_active: bool = True):
+    def __init__(self, node_id: str, ip_address: str, is_active: bool = True, latitude: float = 0.0, longitude: float = 0.0):
         self.node_id = node_id
         self._ip_address = None
         # Setting ip_address triggers the property setter for validation
         self.ip_address = ip_address
         self.is_active = is_active
+        self.latitude = latitude
+        self.longitude = longitude
 
     @property
     def ip_address(self) -> str:

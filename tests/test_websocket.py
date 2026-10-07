@@ -11,7 +11,7 @@ def test_websocket_network_initialized():
     with client.websocket_connect("/api/ws/simulation") as websocket:
         # First message should be NETWORK_INITIALIZED
         data = websocket.receive_json()
-        assert data["type"] == "NETWORK_INITIALIZED"
+        assert data["type"] == "INITIAL_STATE"
         assert "data" in data
         assert "nodes" in data["data"]
         assert "links" in data["data"]

@@ -5,6 +5,8 @@ class NodeResponse(BaseModel):
     node_id: str
     ip_address: str
     is_active: bool
+    latitude: float
+    longitude: float
 
 class LinkResponse(BaseModel):
     node_a_id: str
@@ -23,6 +25,15 @@ class MessageSendRequest(BaseModel):
     source: str
     destination: str
     message: str
+
+class SOSMessageRequest(BaseModel):
+    source_id: str
+    destination_id: str
+    message: str
+    latitude: float
+    longitude: float
+    priority: str
+
 
 class RouteHistoryItem(BaseModel):
     node_id: str
@@ -44,6 +55,16 @@ class MessageSendResponse(BaseModel):
     packet: Optional[PacketResponse]
 
 class MetricsResponse(BaseModel):
-    # Dummy structure for now
-    total_events: int
-    total_packets_pending: int
+    packets_sent: int
+    packets_delivered: int
+    packets_dropped: int
+    pdr: str
+    loss: str
+    avg_hop_count: str
+    rreq_count: int
+    rrep_count: int
+    rerr_count: int
+    route_discovery_time: str
+    recovery_time: str
+    latency: str
+    throughput: str

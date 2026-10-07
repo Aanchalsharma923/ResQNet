@@ -74,7 +74,7 @@ function App() {
           </div>
           
           <div className="panel-row">
-            <SOSPanel />
+            {networkState ? <SOSPanel networkState={networkState} /> : <div className="panel">Loading SOS...</div>}
             <HospitalPanel events={events} />
           </div>
         </div>

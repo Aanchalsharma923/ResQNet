@@ -12,7 +12,7 @@ class EventBroadcaster:
         self.loop = loop
 
     async def subscribe(self) -> asyncio.Queue:
-        queue = asyncio.Queue()
+        queue = asyncio.Queue(maxsize=1000)
         self.subscribers.append(queue)
         return queue
 
@@ -37,7 +37,15 @@ class EventBroadcaster:
 
     def _dispatch_to_subscribers(self, event: dict):
         for queue in self.subscribers:
-            queue.put_nowait(event)
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                # Drop oldest event to make room
+                try:
+                    queue.get_nowait()
+                    queue.put_nowait(event)
+                except (asyncio.QueueEmpty, asyncio.QueueFull):
+                    pass
 
 # Global singleton
 broadcaster = EventBroadcaster()

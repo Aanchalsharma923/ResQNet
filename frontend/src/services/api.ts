@@ -53,3 +53,26 @@ export const sendMessage = async (source: string, destination: string, message: 
   });
   return res.json();
 };
+
+export const sendSOS = async (sosRequest: any) => {
+  const res = await fetch(`${API_BASE}/sos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(sosRequest),
+  });
+  return res.json();
+};
+
+export const getHospitalInbox = async () => {
+  const res = await fetch(`${API_BASE}/hospital/inbox`);
+  return res.json();
+};
+
+export const respondHospital = async (source: string, destination: string, message: string) => {
+  const res = await fetch(`${API_BASE}/hospital/respond`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, destination, message }),
+  });
+  return res.json();
+};
