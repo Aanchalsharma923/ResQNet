@@ -8,6 +8,7 @@ class PacketType(Enum):
     RREQ = auto()
     RREP = auto()
     RERR = auto()
+    HELLO = auto()
 
 class PacketStatus(Enum):
     """Lifecycle states of a packet."""

@@ -114,6 +114,13 @@ class AODVRouter(BaseRouter):
             
         return []
 
+    def handle_link_failure(self, neighbor_id: str):
+        """
+        Public API to handle when a neighbor is detected as unavailable.
+        Generates RERR and invalidates affected routes.
+        """
+        self._generate_rerr(neighbor_id)
+
     def _generate_rerr(self, unreachable_next_hop: str):
         affected_dests = []
         for dest_id, route in self.routing_table._routes.items():

@@ -52,10 +52,11 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
 - **Tasks**:
   - Implement Transport Abstraction (`BaseTransport`, `SimulationTransport`). (Complete)
   - Implement Packet Serialization & Wire Format. (Complete)
-  - Integrate actual Python UDP sockets (`UDPTransport`).
-  - Separate simulated routing decisions from physical transport payload delivery.
+  - Integrate actual Python UDP sockets (`UDPTransport`). (Complete)
+  - Separate simulated routing decisions from physical transport payload delivery. (Complete)
+  - Phase 4.4: Configuration & Multi-laptop prep (Next)
 - **Verification**:
-  - Wireshark captures showing actual packets matching the simulation's intent.
+  - Pass all tests natively using socket-based transport on localhost.
 
 ## Phase 6: FastAPI & WebSocket Backend (Complete)
 *Goal: Expose the engine via standard web protocols.*

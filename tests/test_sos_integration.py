@@ -75,7 +75,7 @@ def test_sos_disaster_recovery():
     data5 = resp5.json()
     assert data5["success"] is True
     assert data5["packet"]["status"] == "DELIVERED"
-    assert "B" not in data5["packet"]["route_history"]
+    assert intermediate_hop not in data5["packet"]["route_history"]
 
     # Verify hospital inbox contains the new SOS
     inbox_final = client.get("/api/hospital/inbox").json()

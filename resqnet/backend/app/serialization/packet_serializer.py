@@ -38,6 +38,8 @@ def serialize_packet(packet: Packet) -> bytes:
     elif packet.packet_type == PacketType.DATA:
         # DATA payload is expected to be JSON serializable (dict, string, etc.)
         payload_data = packet.payload
+    elif packet.packet_type == PacketType.HELLO:
+        payload_data = packet.payload
     else:
         raise ValueError(f"Unknown packet type for serialization: {packet.packet_type}")
         
@@ -129,7 +131,7 @@ def deserialize_packet(data: bytes | str) -> Packet:
         except (KeyError, TypeError, ValueError, IndexError) as e:
             raise ValueError(f"Malformed RERR payload: {str(e)}")
             
-    elif packet_type == PacketType.DATA:
+    elif packet_type == PacketType.DATA or packet_type == PacketType.HELLO:
         reconstructed_payload = payload_data
         
     # Build Packet
