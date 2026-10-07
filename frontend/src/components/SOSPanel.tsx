@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { sendSOS } from '../services/api';
-import { NetworkState } from '../types';
+import type { NetworkState } from '../types';
 
 const SOSPanel = ({ networkState }: { networkState: NetworkState }) => {
   const [source, setSource] = useState('A');

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import TopologyView from './TopologyView';
-import { NetworkState } from '../types';
+import type { NetworkState } from '../types';
 
 const mockNetworkState: NetworkState = {
   nodes: [
