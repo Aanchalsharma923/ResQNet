@@ -80,7 +80,7 @@ function App() {
         </div>
 
         <div className="col-side">
-          <ControlsPanel />
+          <ControlsPanel networkState={networkState} />
           <MetricsPanel events={events} />
           <EventLog events={events} onClear={clearEvents} />
         </div>

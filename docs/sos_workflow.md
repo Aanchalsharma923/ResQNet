@@ -22,3 +22,12 @@ The SOS mechanism simulates a disaster victim (at a Rescue Node) sending an emer
 7. **Frontend Updates**:
     - Throughout this process, the `SimulationService` and `AODVRouter` emit WebSocket events (e.g., `RREQ_GENERATED`, `DATA_FORWARDED`, `DATA_DELIVERED`, `ROUTE_INVALIDATED`).
     - The frontend `useSimulation` hook processes these events to animate packet movement on the `TopologyView` and logs them in the `EventLog`.
+
+## Verification & Freeze (Phase 3.5)
+The SOS workflow is thoroughly verified via end-to-end integration tests (`tests/test_e2e_scenarios.py`) spanning:
+- Normal SOS Delivery
+- Disaster Recovery (mid-route node failure)
+- Link Failures
+- Unrecoverable Failures (partitioned network)
+
+Along with metrics tracking overhead (RREQ, RREP, RERR), the SOS integration between the core simulation, the FastAPI/WebSocket backend, and the React frontend is completely **FROZEN**. No further modifications to this logical simulation flow are permitted.

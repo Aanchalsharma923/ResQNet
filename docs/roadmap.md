@@ -47,10 +47,12 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
   - Measure route discovery and recovery times.
   - Implement structured event logging.
 
-## Phase 5: Transport Layer Integration
+## Phase 5: Transport Layer Integration (In Progress)
 *Goal: Bridge simulation with actual OS-level networking.*
 - **Tasks**:
-  - Integrate actual Python UDP/TCP sockets.
+  - Implement Transport Abstraction (`BaseTransport`, `SimulationTransport`). (Complete)
+  - Implement Packet Serialization & Wire Format. (Complete)
+  - Integrate actual Python UDP sockets (`UDPTransport`).
   - Separate simulated routing decisions from physical transport payload delivery.
 - **Verification**:
   - Wireshark captures showing actual packets matching the simulation's intent.
@@ -61,12 +63,14 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
   - Create REST endpoints for topology management, simulation control, and metrics.
   - Create WebSocket endpoints to stream live events (RREQ, failures, packet movement).
 
-## Phase 7: React Frontend Visualization (Complete)
-*Goal: Visually demonstrate the network.*
+## Phase 7: React Frontend Visualization & Integration Freeze (Complete)
+*Goal: Visually demonstrate the network and freeze the simulation core.*
 - **Tasks**:
   - Build React dashboard consuming FastAPI and WebSockets.
   - Visualize topology, nodes, links, and real-time packet flow.
   - Visualize metrics and failure/recovery scenarios.
+  - Execute end-to-end disaster scenario verification.
+  - Freeze the complete simulation + dashboard integration before moving toward real networking.
 
 ## Phase 8: Optional Persistence
 *Goal: Record simulation history.*

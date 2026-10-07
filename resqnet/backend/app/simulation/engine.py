@@ -1,22 +1,36 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from resqnet.backend.app.simulation.topology import NetworkTopology
 from resqnet.backend.app.models.packet import Packet, PacketStatus
 from resqnet.backend.app.routing.base import BaseRouter
+from resqnet.backend.app.transport.base import BaseTransport
 
 class SimulationEngine:
     """
     Executes hop-by-hop packet forwarding through the topology.
-    Coordinates between Packets, Topology, and Routers.
+    Coordinates between Packets, Topology, Routers, and Transport.
     """
-    def __init__(self, topology: NetworkTopology, routers: Dict[str, BaseRouter]):
+    def __init__(self, topology: NetworkTopology, routers: Dict[str, BaseRouter], transport: Optional[BaseTransport] = None):
         """
         topology: The central NetworkTopology containing nodes and links.
         routers: A mapping from node_id to its corresponding BaseRouter instance.
+        transport: The transport layer mechanism. Defaults to SimulationTransport if None.
         """
         self.topology = topology
         self.routers = routers
         self.events: List[str] = []
         self.pending_messages: List[Packet] = []
+        
+        if transport is None:
+            from resqnet.backend.app.transport.simulation import SimulationTransport
+            self.transport = SimulationTransport(topology, event_logger=self._log_event)
+        else:
+            self.transport = transport
+            
+        self.transport.set_receive_callback(self._on_packet_received_from_transport)
+        self.transport.start()
+
+    def _on_packet_received_from_transport(self, packet: Packet):
+        self.pending_messages.append(packet)
 
     def _log_event(self, event: str, packet: Packet = None):
         self.events.append(event)
@@ -92,36 +106,12 @@ class SimulationEngine:
                 self._log_event("PACKET_DROPPED", packet)
             return
             
-        # 4. Verify that the next hops are active neighbors in NetworkTopology
-        current_node_obj = self.topology.get_node_by_id(current)
-        active_neighbors = self.topology.get_active_neighbors(current_node_obj.ip_address)
-        active_neighbor_ids = [n.node_id for n in active_neighbors]
+        # 4 & 5. Use Transport to send the packet to next_hops
+        success = self.transport.send(packet, next_hops)
         
-        valid_next_hops = [hop for hop in next_hops if hop in active_neighbor_ids]
-        
-        if not valid_next_hops:
+        if not success:
             packet.mark_dropped()
             if packet.packet_type.name not in ["RREQ", "RERR"]:
                 self._log_event("NEXT_HOP_UNAVAILABLE", packet)
             self._log_event("PACKET_DROPPED", packet)
             return
-            
-        # 5. Move the packet to those nodes
-        original_packet = packet.clone() # Keep a pristine copy if we need to modify packet
-        
-        for i, hop in enumerate(valid_next_hops):
-            # For the last hop, we can just use the original packet to avoid an extra clone
-            out_packet = packet if i == len(valid_next_hops) - 1 else original_packet.clone()
-            
-            if out_packet.packet_type.name == "RREQ":
-                self._log_event(f"RREQ_BROADCAST {current} -> {hop}", out_packet)
-            else:
-                self._log_event(f"FORWARD {current} -> {hop}", out_packet)
-                
-            out_packet.sender_id = current
-            out_packet.move_to(hop)
-            
-            if out_packet.status == PacketStatus.DROPPED:
-                self._log_event("PACKET_DROPPED", out_packet)
-            else:
-                self.pending_messages.append(out_packet)

@@ -51,19 +51,19 @@ const MetricsPanel = ({ events }: { events: WSEvent[] }) => {
           <div className="metric-label">RERR Count</div>
         </div>
         <div className="metric-item">
-          <div className="metric-value">N/A</div>
+          <div className="metric-value">{metrics ? metrics.route_discovery_time : 'N/A'}</div>
           <div className="metric-label">Discovery Time</div>
         </div>
         <div className="metric-item">
-          <div className="metric-value">N/A</div>
+          <div className="metric-value">{metrics ? metrics.recovery_time : 'N/A'}</div>
           <div className="metric-label">Recovery Time</div>
         </div>
         <div className="metric-item">
-          <div className="metric-value">N/A</div>
+          <div className="metric-value">{metrics ? metrics.latency : 'N/A'}</div>
           <div className="metric-label">Latency</div>
         </div>
         <div className="metric-item">
-          <div className="metric-value">N/A</div>
+          <div className="metric-value">{metrics ? metrics.throughput : 'N/A'}</div>
           <div className="metric-label">Throughput</div>
         </div>
       </div>

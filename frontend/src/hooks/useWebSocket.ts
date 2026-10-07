@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ConnectionStatus, WSEvent } from '../types';
 
+let localEventCounter = 0;
+
 export const useWebSocket = (url: string) => {
   const [status, setStatus] = useState<ConnectionStatus>('DISCONNECTED');
   const [events, setEvents] = useState<WSEvent[]>([]);
@@ -15,8 +17,24 @@ export const useWebSocket = (url: string) => {
     };
 
     ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setEvents((prev) => [data, ...prev].slice(0, 100)); // keep last 100 events
+      const data = JSON.parse(event.data) as WSEvent;
+      
+      if (!data.event_id) {
+        localEventCounter += 1;
+        data.event_id = `local-${localEventCounter}`;
+      }
+      
+      // Provide a fallback timestamp if missing
+      if (!data.timestamp) {
+        data.timestamp = new Date().toISOString();
+      }
+
+      setEvents((prev) => {
+        if (prev.some((e) => e.event_id === data.event_id)) {
+          return prev;
+        }
+        return [data, ...prev].slice(0, 100);
+      });
     };
 
     ws.current.onclose = () => {

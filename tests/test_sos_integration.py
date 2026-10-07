@@ -31,14 +31,16 @@ def test_sos_disaster_recovery():
     assert data2["success"] is True
     assert data2["packet"]["status"] == "DELIVERED"
     
+    intermediate_hop = data2["packet"]["route_history"][1]
+
     # Verify Hospital inbox contains it
     inbox = client.get("/api/hospital/inbox").json()
     assert len(inbox) > 0
     assert any(item["message"] == "Emergency SOS from A" for item in inbox)
     initial_inbox_count = len(inbox)
 
-    # 6. Fail B (Node B)
-    client.post("/api/nodes/B/fail")
+    # 6. Fail the intermediate node (B or D)
+    client.post(f"/api/nodes/{intermediate_hop}/fail")
 
     # 7. Send another SOS from A to H (this will fail and trigger RERR)
     payload3 = {
