@@ -58,18 +58,9 @@ function App() {
           ...prev,
           nodes: prev.nodes.map(n => n.node_id === data.neighbor_id ? { ...n, is_active: true } : n)
         } : null);
-      } else if (evType === 'ROUTE_DISCOVERY_COMPLETED') {
-        if (data.node_id === 'A' && data.destination === 'H') {
-          const nextHop = data.next_hop;
-          const newRoute = nextHop === 'B' ? ['A', 'B', 'C', 'H'] : nextHop === 'D' ? ['A', 'D', 'C', 'H'] : ['A', nextHop, 'H'];
-          setNetworkState(prev => prev ? { ...prev, active_route: newRoute } : null);
-        }
-      } else if (evType === 'DATA_FORWARDED' && data.from_node === 'A') {
-        const nextHop = data.to_node;
-        if (nextHop === 'B') {
-          setNetworkState(prev => prev ? { ...prev, active_route: ['A', 'B', 'C', 'H'] } : null);
-        } else if (nextHop === 'D') {
-          setNetworkState(prev => prev ? { ...prev, active_route: ['A', 'D', 'C', 'H'] } : null);
+      } else if (evType === 'ROUTE_DISCOVERY_COMPLETED' || evType === 'FORWARD_ROUTE_INSTALLED') {
+        if (data.active_route) {
+          setNetworkState(prev => prev ? { ...prev, active_route: data.active_route } : null);
         }
       } else if (evType === 'ROUTE_INVALIDATED') {
         setNetworkState(prev => prev ? { ...prev, active_route: [] } : null);

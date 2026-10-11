@@ -89,7 +89,21 @@ def test_real_network_runtime_event_handling():
     })
     assert real_rt.metrics["rreq_count"] == 1
     
-    # Simulate ROUTE_DISCOVERY_COMPLETED via B
+    # Simulate distributed AODV RREP propagation and forward route installation
+    real_rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "C", "dest": "H", "next": "H", "hops": "1"}
+    })
+    real_rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "B", "dest": "H", "next": "C", "hops": "2"}
+    })
+    real_rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "A", "dest": "H", "next": "B", "hops": "3"}
+    })
+    
+    # Simulate ROUTE_DISCOVERY_COMPLETED at node A
     real_rt._handle_incoming_event({
         "type": "ROUTE_DISCOVERY_COMPLETED",
         "data": {

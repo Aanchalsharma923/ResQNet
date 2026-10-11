@@ -76,7 +76,39 @@ class RealNetworkRuntime:
         self._route_recovery_start: Optional[float] = None
         self._packet_send_times: Dict[str, float] = {}
 
+        self._routing_entries: Dict[str, Dict[str, str]] = {}
+        self.topology_links = DEFAULT_LINKS
         self._load_config()
+
+    def _recalculate_active_route(self, source_id: str = "A", destination_id: str = "H"):
+        curr = source_id
+        route = [curr]
+        visited = {curr}
+        while curr != destination_id:
+            nxt = None
+            if curr in self._routing_entries and destination_id in self._routing_entries[curr]:
+                nxt = self._routing_entries[curr][destination_id]
+            elif len(route) == 2:
+                # Follow topology links if intermediate nodes have not reported forward route entries
+                for link_a, link_b in self.topology_links:
+                    candidate = None
+                    if link_a == curr: candidate = link_b
+                    elif link_b == curr: candidate = link_a
+                    if candidate and candidate not in visited:
+                        if candidate == destination_id or candidate == "C":
+                            nxt = candidate
+                            break
+            if not nxt or nxt in visited:
+                break
+            route.append(nxt)
+            visited.add(nxt)
+            curr = nxt
+            if curr == destination_id:
+                self.active_route = route
+                return
+        if destination_id not in route:
+            if self.active_route and self.active_route[-1] == destination_id:
+                self.active_route.clear()
 
     def _load_config(self):
         try:
@@ -136,6 +168,7 @@ class RealNetworkRuntime:
         self.hospital_inbox.clear()
         self.recent_events.clear()
         self.active_route.clear()
+        self._routing_entries.clear()
         self.metrics = {
             "packets_sent": 0,
             "packets_delivered": 0,
@@ -279,23 +312,34 @@ class RealNetworkRuntime:
         elif event_type == "RERR_GENERATED":
             self.metrics["rerr_count"] += 1
             
-        elif event_type == "ROUTE_DISCOVERY_COMPLETED":
-            if self._route_discovery_start is not None:
-                duration = (time.time() - self._route_discovery_start) * 1000
-                self.metrics["route_discovery_time"] = f"{duration:.1f}ms"
-                self._route_discovery_start = None
-            if self._route_recovery_start is not None:
-                rec_duration = (time.time() - self._route_recovery_start) * 1000
-                self.metrics["recovery_time"] = f"{rec_duration:.1f}ms"
-                self._route_recovery_start = None
-                
-            # If node A discovered route to H with next hop
-            if data.get("node_id") == "A" and data.get("destination") == "H":
-                next_hop = data.get("next_hop")
-                if next_hop == "B":
-                    self.active_route = ["A", "B", "C", "H"]
-                elif next_hop == "D":
-                    self.active_route = ["A", "D", "C", "H"]
+        elif event_type in ("FORWARD_ROUTE_INSTALLED", "ROUTE_DISCOVERY_COMPLETED"):
+            nid = data.get("node_id")
+            dest = data.get("dest") or data.get("destination")
+            nxt = data.get("next") or data.get("next_hop")
+            if nid and dest and nxt:
+                if nid not in self._routing_entries:
+                    self._routing_entries[nid] = {}
+                self._routing_entries[nid][dest] = nxt
+                self._recalculate_active_route("A", dest)
+
+            if event_type == "ROUTE_DISCOVERY_COMPLETED":
+                if self._route_discovery_start is not None:
+                    duration = (time.time() - self._route_discovery_start) * 1000
+                    self.metrics["route_discovery_time"] = f"{duration:.1f}ms"
+                    self._route_discovery_start = None
+                if self._route_recovery_start is not None:
+                    rec_duration = (time.time() - self._route_recovery_start) * 1000
+                    self.metrics["recovery_time"] = f"{rec_duration:.1f}ms"
+                    self._route_recovery_start = None
+
+        elif event_type == "ROUTE_INVALIDATED":
+            nid = data.get("node_id")
+            dest = data.get("destination")
+            if nid and nid in self._routing_entries and dest in self._routing_entries[nid]:
+                del self._routing_entries[nid][dest]
+            if dest == "H":
+                self.active_route.clear()
+                self._route_recovery_start = time.time()
 
         elif event_type == "NEIGHBOR_DOWN":
             nid = data.get("node_id")
@@ -305,6 +349,14 @@ class RealNetworkRuntime:
                     self.neighbor_health[nid] = {}
                 self.neighbor_health[nid][neighbor] = "DOWN"
                 
+            # Purge routing entries involving this down neighbor
+            if neighbor in self._routing_entries:
+                self._routing_entries[neighbor].clear()
+            for n, d_map in self._routing_entries.items():
+                to_del = [d for d, nh in d_map.items() if nh == neighbor]
+                for d in to_del:
+                    del d_map[d]
+
             if neighbor in self.active_route:
                 self.active_route.clear()
                 self._route_recovery_start = time.time()
@@ -321,14 +373,17 @@ class RealNetworkRuntime:
             self.hospital_inbox.append(data)
             
         elif event_type == "DATA_FORWARDED":
-            # Can infer active route progression
             from_n = data.get("from_node")
             to_n = data.get("to_node")
-            if from_n == "A" and to_n:
-                if to_n == "B":
-                    self.active_route = ["A", "B", "C", "H"]
-                elif to_n == "D":
-                    self.active_route = ["A", "D", "C", "H"]
+            if from_n and to_n:
+                if from_n not in self._routing_entries:
+                    self._routing_entries[from_n] = {}
+                self._routing_entries[from_n]["H"] = to_n
+                self._recalculate_active_route("A", "H")
+
+        # Attach authoritative active route to route-related events
+        if event_type in ("ROUTE_DISCOVERY_COMPLETED", "FORWARD_ROUTE_INSTALLED", "ROUTE_INVALIDATED", "NEIGHBOR_DOWN"):
+            data["active_route"] = list(self.active_route)
 
         # 2. Forward to WebSocket broadcaster
         broadcaster.broadcast_sync(event_type, data)

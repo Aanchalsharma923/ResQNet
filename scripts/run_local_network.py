@@ -74,7 +74,7 @@ def launch_all_nodes(config: dict):
         # Monitor processes
         while True:
             time.sleep(1)
-            for node_id, p in processes:
+            for node_id, p in list(processes):
                 if p.poll() is not None:
                     logger.warning(f"Process for Node {node_id} exited with code {p.returncode}")
                     # Remove from list so we don't spam

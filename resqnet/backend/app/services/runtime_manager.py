@@ -55,7 +55,8 @@ class RuntimeManager:
         else:
             state = self.simulation_service.get_network_state()
             state["mode"] = "simulation"
-            state["active_route"] = []
+            if "active_route" not in state:
+                state["active_route"] = []
             return state
 
     def reset(self) -> dict:

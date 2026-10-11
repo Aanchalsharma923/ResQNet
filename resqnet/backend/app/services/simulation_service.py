@@ -190,7 +190,26 @@ class SimulationService:
         elif event_type == "RERR_GENERATED":
             self.metrics["rerr_count"] += 1
 
+        if event_type in ("ROUTE_DISCOVERY_COMPLETED", "FORWARD_ROUTE_INSTALLED", "ROUTE_INVALIDATED", "NODE_FAILED", "NODE_RECOVERED", "LINK_FAILED", "LINK_RECOVERED"):
+            data["active_route"] = self.get_active_route("A", "H")
+
         broadcaster.broadcast_sync(event_type, data)
+
+    def get_active_route(self, source_id: str = "A", destination_id: str = "H") -> List[str]:
+        """Dynamically traces active AODV routing table entries from source to destination."""
+        curr = source_id
+        route = [curr]
+        visited = {curr}
+        while curr in self.routers and self.routers[curr].has_valid_route(destination_id):
+            nxt = self.routers[curr].get_next_hop(destination_id)
+            if not nxt or nxt in visited:
+                break
+            route.append(nxt)
+            visited.add(nxt)
+            curr = nxt
+            if curr == destination_id:
+                return route
+        return []
 
     def reset(self):
         self._initialize()
@@ -217,7 +236,8 @@ class SimulationService:
             
         return {
             "nodes": nodes,
-            "links": links
+            "links": links,
+            "active_route": self.get_active_route("A", "H")
         }
 
     def set_node_status(self, node_id: str, is_active: bool) -> bool:
