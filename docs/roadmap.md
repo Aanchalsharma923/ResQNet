@@ -47,16 +47,20 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
   - Measure route discovery and recovery times.
   - Implement structured event logging.
 
-## Phase 5: Transport Layer Integration (In Progress)
-*Goal: Bridge simulation with actual OS-level networking.*
+## Phase 5: Transport Layer & Real Network Integration (Complete)
+*Goal: Bridge simulation with actual OS-level networking and integrate with web dashboard.*
 - **Tasks**:
   - Implement Transport Abstraction (`BaseTransport`, `SimulationTransport`). (Complete)
   - Implement Packet Serialization & Wire Format. (Complete)
   - Integrate actual Python UDP sockets (`UDPTransport`). (Complete)
-  - Separate simulated routing decisions from physical transport payload delivery. (Complete)
-  - Phase 4.4: Configuration & Multi-laptop prep (Next)
+  - Multi-Process Localhost Execution (`NodeRuntime`). (Complete)
+  - AODV over Real UDP. (Complete)
+  - Neighbor Health Monitoring & Failure Recovery over UDP. (Complete)
+  - Multi-Laptop LAN Deployment. (Complete)
+  - Real-Network Dashboard Integration (`RuntimeManager`, `RealNetworkRuntime`). (Complete)
 - **Verification**:
-  - Pass all tests natively using socket-based transport on localhost.
+  - Pass all automated unit, integration, and E2E tests across both simulation and real UDP modes.
+
 
 ## Phase 6: FastAPI & WebSocket Backend (Complete)
 *Goal: Expose the engine via standard web protocols.*

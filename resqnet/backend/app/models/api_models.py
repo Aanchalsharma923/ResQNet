@@ -7,6 +7,8 @@ class NodeResponse(BaseModel):
     is_active: bool
     latitude: float
     longitude: float
+    endpoint: Optional[str] = None
+    status: Optional[str] = None
 
 class LinkResponse(BaseModel):
     node_a_id: str
@@ -16,6 +18,13 @@ class LinkResponse(BaseModel):
 class NetworkResponse(BaseModel):
     nodes: List[NodeResponse]
     links: List[LinkResponse]
+    mode: Optional[str] = "simulation"
+    active_route: Optional[List[str]] = []
+    neighbor_health: Optional[Dict[str, Dict[str, str]]] = None
+
+class RuntimeModeRequest(BaseModel):
+    mode: str
+
 
 class LinkActionRequest(BaseModel):
     node_a: str

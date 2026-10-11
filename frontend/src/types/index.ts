@@ -1,11 +1,15 @@
 export type ConnectionStatus = 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
 
+export type RuntimeMode = 'simulation' | 'real';
+
 export interface NodeState {
   node_id: string;
   ip_address: string;
   is_active: boolean;
   latitude: number;
   longitude: number;
+  endpoint?: string;
+  status?: string;
 }
 
 export interface SOSMessage {
@@ -31,6 +35,9 @@ export interface LinkState {
 export interface NetworkState {
   nodes: NodeState[];
   links: LinkState[];
+  mode?: RuntimeMode;
+  active_route?: string[];
+  neighbor_health?: Record<string, Record<string, string>>;
 }
 
 export interface WSEvent {

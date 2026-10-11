@@ -47,4 +47,15 @@ describe('TopologyView', () => {
     // Just ensuring no crash and that elements are rendered.
     expect(circles.length).toBeGreaterThan(2); 
   });
+
+  it('renders active route banner and DOWN status indicator', () => {
+    const routeState: NetworkState = {
+      ...mockNetworkState,
+      active_route: ['A', 'B', 'C', 'H']
+    };
+    render(<TopologyView networkState={routeState} events={[]} />);
+    expect(screen.getByText('A → B → C → H')).toBeInTheDocument();
+    expect(screen.getByText('DOWN')).toBeInTheDocument();
+  });
 });
+

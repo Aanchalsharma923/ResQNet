@@ -1,4 +1,4 @@
-import type { NetworkState, Metrics } from '../types';
+import type { NetworkState, Metrics, RuntimeMode } from '../types';
 
 const API_BASE = 'http://localhost:8000/api';
 
@@ -76,3 +76,43 @@ export const respondHospital = async (source: string, destination: string, messa
   });
   return res.json();
 };
+
+export const fetchRuntimeMode = async (): Promise<{ mode: RuntimeMode }> => {
+  const res = await fetch(`${API_BASE}/runtime/mode`);
+  return res.json();
+};
+
+export const setRuntimeMode = async (mode: RuntimeMode): Promise<{ status: string; mode: RuntimeMode }> => {
+  const res = await fetch(`${API_BASE}/runtime/mode`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
+  return res.json();
+};
+
+export const fetchRuntimeStatus = async () => {
+  const res = await fetch(`${API_BASE}/runtime/status`);
+  return res.json();
+};
+
+export const startRealRuntime = async () => {
+  const res = await fetch(`${API_BASE}/runtime/start`, { method: 'POST' });
+  return res.json();
+};
+
+export const stopRealRuntime = async () => {
+  const res = await fetch(`${API_BASE}/runtime/stop`, { method: 'POST' });
+  return res.json();
+};
+
+export const stopRealNode = async (nodeId: string) => {
+  const res = await fetch(`${API_BASE}/runtime/nodes/${nodeId}/stop`, { method: 'POST' });
+  return res.json();
+};
+
+export const startRealNode = async (nodeId: string) => {
+  const res = await fetch(`${API_BASE}/runtime/nodes/${nodeId}/start`, { method: 'POST' });
+  return res.json();
+};
+

@@ -46,6 +46,18 @@ body {
 .status-badge.connecting, .status-badge.reconnecting { background: #e65100; color: #ffe082; }
 .status-badge.disconnected { background: #b71c1c; color: #ef9a9a; }
 
+.mode-badge {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.mode-badge.simulation { background: #01579b; color: #b3e5fc; border: 1px solid #0288d1; }
+.mode-badge.real { background: #4a148c; color: #e1bee7; border: 1px solid #7b1fa2; }
+
+
 .dashboard-grid {
   display: flex;
   gap: 20px;
@@ -267,7 +279,7 @@ input, select, textarea {
 .link {
   stroke: #555;
   stroke-width: 3;
-  transition: stroke 0.3s;
+  transition: stroke 0.3s, stroke-width 0.3s;
 }
 
 .link.failed {
@@ -275,6 +287,13 @@ input, select, textarea {
   stroke-dasharray: 5, 5;
   opacity: 0.5;
 }
+
+.link.active-route {
+  stroke: #00e676;
+  stroke-width: 5;
+  filter: drop-shadow(0 0 6px rgba(0, 230, 118, 0.7));
+}
+
 
 /* Packets */
 .packet {

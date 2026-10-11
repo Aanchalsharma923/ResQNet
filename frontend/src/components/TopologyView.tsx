@@ -99,63 +99,106 @@ const TopologyView = ({ networkState, events }: TopologyViewProps) => {
     return () => clearInterval(interval);
   }, [animations.length]);
 
+  const isActiveRouteLink = (nodeA: string, nodeB: string): boolean => {
+    if (!networkState.active_route || networkState.active_route.length < 2) return false;
+    const route = networkState.active_route;
+    for (let i = 0; i < route.length - 1; i++) {
+      if ((route[i] === nodeA && route[i + 1] === nodeB) || (route[i] === nodeB && route[i + 1] === nodeA)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   return (
-    <svg className="topology-svg" viewBox="0 0 900 500">
-      {/* Draw Links */}
-      {networkState.links.map(link => {
-        const posA = nodePositions[link.node_a_id];
-        const posB = nodePositions[link.node_b_id];
-        // Only return null if the position hasn't been computed (shouldn't happen now)
-        if (!posA || !posB) return null;
-        
-        // Use a consistent order for keys so that A-B and B-A are the same key if duplicated, though the backend shouldn't
-        const key = [link.node_a_id, link.node_b_id].sort().join('-');
-        
-        return (
-          <line
-            key={key}
-            x1={posA.x} y1={posA.y}
-            x2={posB.x} y2={posB.y}
-            className={`link ${!link.is_active ? 'failed' : ''}`}
-          />
-        );
-      })}
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {/* Route Status Banner */}
+      <div style={{
+        position: 'absolute',
+        top: 10,
+        left: 10,
+        background: 'rgba(20, 20, 20, 0.85)',
+        border: '1px solid #444',
+        borderRadius: 4,
+        padding: '6px 12px',
+        fontSize: '0.8rem',
+        zIndex: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        <span style={{ color: '#aaa', textTransform: 'uppercase', fontWeight: 'bold' }}>Active AODV Route:</span>
+        {networkState.active_route && networkState.active_route.length > 0 ? (
+          <span style={{ color: '#00e676', fontWeight: 'bold' }}>
+            {networkState.active_route.join(' → ')}
+          </span>
+        ) : (
+          <span style={{ color: '#ffb300', fontStyle: 'italic' }}>
+            No active route (AODV discovery / recovering)
+          </span>
+        )}
+      </div>
 
-      {/* Draw Packets */}
-      {animations.map(anim => {
-        const posA = nodePositions[anim.from];
-        const posB = nodePositions[anim.to];
-        if (!posA || !posB) return null;
-
-        const x = posA.x + (posB.x - posA.x) * anim.progress;
-        const y = posA.y + (posB.y - posA.y) * anim.progress;
-
-        return (
-          <circle
-            key={anim.id}
-            cx={x} cy={y}
-            className={`packet ${anim.type}`}
-          />
-        );
-      })}
-
-      {/* Draw Nodes */}
-      {networkState.nodes.map(node => {
-        const pos = nodePositions[node.node_id];
-        if (!pos) return null;
-        const isHospital = node.node_id === 'H';
-        return (
-          <g key={node.node_id} transform={`translate(${pos.x}, ${pos.y})`}>
-            <circle
-              r={25}
-              className={`node ${!node.is_active ? 'failed' : ''} ${isHospital ? 'hospital' : ''}`}
+      <svg className="topology-svg" viewBox="0 0 900 500">
+        {/* Draw Links */}
+        {networkState.links.map(link => {
+          const posA = nodePositions[link.node_a_id];
+          const posB = nodePositions[link.node_b_id];
+          if (!posA || !posB) return null;
+          
+          const key = [link.node_a_id, link.node_b_id].sort().join('-');
+          const isActiveRoute = isActiveRouteLink(link.node_a_id, link.node_b_id);
+          
+          return (
+            <line
+              key={key}
+              x1={posA.x} y1={posA.y}
+              x2={posB.x} y2={posB.y}
+              className={`link ${!link.is_active ? 'failed' : ''} ${isActiveRoute ? 'active-route' : ''}`}
             />
-            <text y={5} className="node-label">{node.node_id}</text>
-            <text y={40} className="node-ip">{node.ip_address}</text>
-          </g>
-        );
-      })}
-    </svg>
+          );
+        })}
+
+        {/* Draw Packets */}
+        {animations.map(anim => {
+          const posA = nodePositions[anim.from];
+          const posB = nodePositions[anim.to];
+          if (!posA || !posB) return null;
+
+          const x = posA.x + (posB.x - posA.x) * anim.progress;
+          const y = posA.y + (posB.y - posA.y) * anim.progress;
+
+          return (
+            <circle
+              key={anim.id}
+              cx={x} cy={y}
+              className={`packet ${anim.type}`}
+            />
+          );
+        })}
+
+        {/* Draw Nodes */}
+        {networkState.nodes.map(node => {
+          const pos = nodePositions[node.node_id];
+          if (!pos) return null;
+          const isHospital = node.node_id === 'H';
+          const displayAddr = node.endpoint || node.ip_address;
+          return (
+            <g key={node.node_id} transform={`translate(${pos.x}, ${pos.y})`}>
+              <circle
+                r={25}
+                className={`node ${!node.is_active ? 'failed' : ''} ${isHospital ? 'hospital' : ''}`}
+              />
+              <text y={5} className="node-label">{node.node_id}</text>
+              <text y={40} className="node-ip">{displayAddr}</text>
+              {!node.is_active && (
+                <text y={54} fill="#ff5252" fontSize="10" textAnchor="middle" fontWeight="bold">DOWN</text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
   );
 };
 

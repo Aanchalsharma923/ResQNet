@@ -26,8 +26,9 @@ describe('App', () => {
   it('renders the header and all main panels', () => {
     render(<App />);
     
-    // Check header
+    // Check header and mode badge
     expect(screen.getByText('RESQNET: Disaster-Resilient AODV Communication Network')).toBeInTheDocument();
+    expect(screen.getByText('Simulation Mode')).toBeInTheDocument();
     
     // Check main panels
     expect(screen.getByText('Loading topology...')).toBeInTheDocument(); // TopologyView is not rendered until state loads
