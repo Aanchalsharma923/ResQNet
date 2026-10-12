@@ -251,7 +251,24 @@ python scripts/run_demo.py
 
 ---
 
-## Part 6: Troubleshooting & Common Issues
+## Part 6: Wireshark Packet Inspection (Phase 5.2)
+
+For low-level packet verification during the demonstration, Wireshark can be used to observe real UDP datagrams carrying ResQNet's JSON-serialized AODV and SOS packets.
+
+- **Detailed Guide**: See [docs/wireshark_validation.md](file:///c:/Users/aanch/OneDrive/Desktop/Documents/CNT/ResQNet/docs/wireshark_validation.md) for full prerequisites, interface setup, payload schemas, and troubleshooting.
+- **Recommended Interface**:
+  - **Localhost**: Select `Npcap Loopback Adapter` (Windows) or `lo` (Linux/macOS).
+  - **Physical LAN**: Select active `Wi-Fi` or `Ethernet` network card.
+- **Key Display Filters**:
+  - Inter-node mesh traffic: `udp.port in {50010..50014}`
+  - RREQ / RREP route discovery: `udp.port in {50010..50014} && (frame contains "RREQ" || frame contains "RREP")`
+  - Route error (RERR): `udp.port in {50010..50014} && frame contains "RERR"`
+  - SOS distress data: `udp.port in {50010..50014} && frame contains "HELP REQUIRED"`
+- **Protocol Note**: ResQNet runs application-level AODV over UDP ports `50010`–`50014`. Datagrams appear in Wireshark as UDP packets carrying JSON UTF-8 payloads, rather than binary RFC 3561 packets (port 654).
+
+---
+
+## Part 7: Troubleshooting & Common Issues
 
 1. **Port Already in Use (`OSError: [Errno 10048] Address already in use`)**:
    - Cause: A previous test run or orphaned process is still holding UDP ports `50010`–`50014` or `50099`.

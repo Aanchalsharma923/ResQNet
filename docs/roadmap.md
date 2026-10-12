@@ -73,6 +73,16 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
 - **Verification**:
   - 147 backend tests passing, 8 frontend tests passing, frontend production build succeeding, reproducible UDP localhost demo passing.
 
+## Phase 5.2: Wireshark Packet Validation (Complete)
+*Goal: Packet-level protocol verification over UDP/IP, display filter definition, payload schemas, and Wireshark runbook.*
+- **Tasks**:
+  - Clarify application-level AODV over UDP datagrams vs native binary RFC 3561. (Complete)
+  - Define exact display filters for node mesh traffic (`udp.port in {50010..50014}`), control traffic, and event bridge. (Complete)
+  - Author comprehensive guide `docs/wireshark_validation.md` and link to `docs/final_demo_runbook.md`. (Complete)
+  - Exclude raw packet capture files from repository tracking. (Complete)
+- **Verification**:
+  - All tests passing; code and filter inspection verified; capture guide ready for live loopback capture.
+
 
 ## Phase 6: FastAPI & WebSocket Backend (Complete)
 *Goal: Expose the engine via standard web protocols.*

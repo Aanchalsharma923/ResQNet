@@ -18,6 +18,14 @@ venv.bak/
 *.swp
 *.swo
 
+# Testing and Pytest
+.pytest_cache/
+
+# Packet captures
+*.pcap
+*.pcapng
+artifacts/wireshark/*.pcap*
+
 # OS generated files
 .DS_Store
 Thumbs.db
