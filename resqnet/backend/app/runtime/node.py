@@ -306,10 +306,17 @@ Status: READY
         for ev in list(self.router.events):
             logger.info(f"[{self.node_id}] EVENT: {ev} for packet {packet.packet_id}")
             if ev.startswith("ROUTE_INVALIDATED:"):
-                dest = ev.replace("ROUTE_INVALIDATED: destination=", "").split(" ")[0]
+                parts = ev.replace("ROUTE_INVALIDATED: ", "").split(" ")
+                data_map = {}
+                for p in parts:
+                    if "=" in p:
+                        k, v = p.split("=")
+                        data_map[k] = v
+                dest = data_map.get("dest") or data_map.get("destination", "")
                 self._emit_event("ROUTE_INVALIDATED", {
                     "node_id": self.node_id,
-                    "destination": dest
+                    "destination": dest,
+                    **data_map
                 })
             elif ev.startswith("FORWARD_ROUTE_INSTALLED:"):
                 parts = ev.replace("FORWARD_ROUTE_INSTALLED: ", "").split(" ")
@@ -460,6 +467,17 @@ Status: READY
                         "packet_id": packet.packet_id
                     })
             self.transport.send(packet, next_hops)
+        else:
+            if packet.packet_type == PacketType.DATA and packet.status != PacketStatus.DELIVERED:
+                packet.mark_dropped()
+                logger.warning(f"[{self.node_id}] DATA packet dropped: no next hop to {packet.destination_id}")
+                self._emit_event("DATA_DROPPED", {
+                    "packet_id": packet.packet_id,
+                    "node_id": self.node_id,
+                    "source_id": packet.source_id,
+                    "destination_id": packet.destination_id,
+                    "reason": "NO_ROUTE_AVAILABLE"
+                })
             
     def _dispatch_generated_packets(self):
         if hasattr(self.router, 'generated_packets') and self.router.generated_packets:

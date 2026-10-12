@@ -55,6 +55,7 @@ def run_demonstration():
         # Step 2: Send SOS from A to H
         logger.info("\n[Step 2] Node A sending initial SOS ('HELP REQUIRED') to Hospital H...")
         runtime.send_sos({
+            "message_id": "sos-msg-initial",
             "source_id": "A",
             "destination_id": "H",
             "message": "HELP REQUIRED",
@@ -70,6 +71,7 @@ def run_demonstration():
         if not runtime.hospital_inbox:
             logger.info("Route established; sending confirmed delivery packet...")
             runtime.send_sos({
+                "message_id": "sos-msg-initial",
                 "source_id": "A",
                 "destination_id": "H",
                 "message": "HELP REQUIRED",
@@ -98,6 +100,7 @@ def run_demonstration():
         # Step 5: Send subsequent SOS via alternate route
         logger.info("\n[Step 5] Node A sending subsequent SOS ('HELP REQUIRED (RECOVERED)') to Hospital H...")
         runtime.send_sos({
+            "message_id": "sos-msg-recovered",
             "source_id": "A",
             "destination_id": "H",
             "message": "HELP REQUIRED (RECOVERED)",
@@ -109,16 +112,19 @@ def run_demonstration():
         logger.info("Waiting 2 seconds for AODV route rediscovery via Relay-D...")
         time.sleep(2)
         
-        # Deliver via discovered route
-        runtime.send_sos({
-            "source_id": "A",
-            "destination_id": "H",
-            "message": "HELP REQUIRED (RECOVERED)",
-            "latitude": 18.5204,
-            "longitude": 73.8567,
-            "priority": "HIGH"
-        })
-        time.sleep(2)
+        # Deliver via discovered route if not already delivered
+        if not any("RECOVERED" in m.get("message", "") for m in runtime.hospital_inbox):
+            logger.info("Alternate route established; delivering confirmed subsequent SOS packet...")
+            runtime.send_sos({
+                "message_id": "sos-msg-recovered",
+                "source_id": "A",
+                "destination_id": "H",
+                "message": "HELP REQUIRED (RECOVERED)",
+                "latitude": 18.5204,
+                "longitude": 73.8567,
+                "priority": "HIGH"
+            })
+            time.sleep(2)
         
         logger.info(f"Active route after recovery: {runtime.active_route}")
         logger.info(f"Hospital inbox count: {len(runtime.hospital_inbox)}")

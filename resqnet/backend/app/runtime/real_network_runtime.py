@@ -75,6 +75,9 @@ class RealNetworkRuntime:
         self._route_discovery_start: Optional[float] = None
         self._route_recovery_start: Optional[float] = None
         self._packet_send_times: Dict[str, float] = {}
+        self._delivered_latencies: List[float] = []
+        self._delivered_bytes: int = 0
+        self._total_transit_time: float = 0.0
 
         self._routing_entries: Dict[str, Dict[str, str]] = {}
         self.topology_links = DEFAULT_LINKS
@@ -172,6 +175,12 @@ class RealNetworkRuntime:
         self.recent_events.clear()
         self.active_route.clear()
         self._routing_entries.clear()
+        self._delivered_latencies.clear()
+        self._delivered_bytes = 0
+        self._total_transit_time = 0.0
+        self._route_discovery_start = None
+        self._route_recovery_start = None
+        self._packet_send_times.clear()
         self.metrics = {
             "packets_sent": 0,
             "packets_delivered": 0,
@@ -242,6 +251,8 @@ class RealNetworkRuntime:
         del self.processes[node_id]
         self.node_status[node_id] = False
         
+        was_in_active_route = (node_id in self.active_route)
+
         # Purge routing entries originating from or pointing to this stopped node
         if node_id in self._routing_entries:
             self._routing_entries[node_id].clear()
@@ -252,8 +263,10 @@ class RealNetworkRuntime:
         self._recalculate_active_route("A", "H")
 
         # If this node was in active route, invalidate the route
-        if node_id in self.active_route:
+        if was_in_active_route:
             self.active_route.clear()
+            if self._route_recovery_start is None:
+                self._route_recovery_start = time.time()
             broadcaster.broadcast_sync("ROUTE_INVALIDATED", {"invalidated_node": node_id})
             
         broadcaster.broadcast_sync("NODE_FAILED", {"node_id": node_id})
@@ -308,7 +321,17 @@ class RealNetworkRuntime:
             pkt_id = data.get("packet_id")
             if pkt_id and pkt_id in self._packet_send_times:
                 lat = (time.time() - self._packet_send_times[pkt_id]) * 1000
-                self.metrics["latency"] = f"{lat:.1f}ms"
+                self._delivered_latencies.append(lat)
+                avg_lat = sum(self._delivered_latencies) / len(self._delivered_latencies)
+                self.metrics["latency"] = f"{avg_lat:.1f}ms"
+                
+                payload = data.get("payload", "")
+                payload_bytes = len(payload.encode("utf-8")) if isinstance(payload, str) else len(str(payload).encode("utf-8"))
+                self._delivered_bytes += payload_bytes
+                self._total_transit_time += (lat / 1000.0)
+                if self._total_transit_time > 0:
+                    throughput_kbps = (self._delivered_bytes * 8) / (self._total_transit_time * 1000)
+                    self.metrics["throughput"] = f"{throughput_kbps:.1f} kbps"
                 
         elif event_type == "DATA_DROPPED":
             self.metrics["packets_dropped"] += 1
@@ -346,12 +369,13 @@ class RealNetworkRuntime:
 
         elif event_type == "ROUTE_INVALIDATED":
             nid = data.get("node_id")
-            dest = data.get("destination")
+            dest = data.get("dest") or data.get("destination")
             if nid and nid in self._routing_entries and dest in self._routing_entries[nid]:
                 del self._routing_entries[nid][dest]
             if dest == "H":
                 self.active_route.clear()
-                self._route_recovery_start = time.time()
+                if self._route_recovery_start is None:
+                    self._route_recovery_start = time.time()
 
         elif event_type == "NEIGHBOR_DOWN":
             nid = data.get("node_id")
@@ -362,16 +386,20 @@ class RealNetworkRuntime:
                 self.neighbor_health[nid][neighbor] = "DOWN"
                 
             # Purge routing entries involving this down neighbor
+            had_route_via_neighbor = (neighbor in self.active_route)
             if neighbor in self._routing_entries:
                 self._routing_entries[neighbor].clear()
             for n, d_map in self._routing_entries.items():
                 to_del = [d for d, nh in d_map.items() if nh == neighbor]
+                if to_del:
+                    had_route_via_neighbor = True
                 for d in to_del:
                     del d_map[d]
 
-            if neighbor in self.active_route:
+            if had_route_via_neighbor:
                 self.active_route.clear()
-                self._route_recovery_start = time.time()
+                if self._route_recovery_start is None:
+                    self._route_recovery_start = time.time()
                 
         elif event_type == "NEIGHBOR_RECOVERED":
             nid = data.get("node_id")
@@ -382,7 +410,9 @@ class RealNetworkRuntime:
                 self.neighbor_health[nid][neighbor] = "UP"
                 
         elif event_type == "SOS_DELIVERED":
-            self.hospital_inbox.append(data)
+            msg_id = data.get("message_id")
+            if not msg_id or not any(x.get("message_id") == msg_id for x in self.hospital_inbox):
+                self.hospital_inbox.append(data)
             
         elif event_type == "DATA_FORWARDED":
             pass  # Animation event, does not alter routing state
@@ -493,7 +523,7 @@ class RealNetworkRuntime:
             "route_discovery_time": self.metrics["route_discovery_time"],
             "recovery_time": self.metrics["recovery_time"],
             "latency": self.metrics["latency"],
-            "throughput": "N/A"
+            "throughput": self.metrics["throughput"]
         }
 
     def get_hospital_inbox(self) -> List[dict]:

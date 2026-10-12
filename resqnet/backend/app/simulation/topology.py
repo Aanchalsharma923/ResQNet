@@ -9,7 +9,8 @@ class NetworkTopology:
     def __init__(self):
         self.nodes_by_id = {}
         self.nodes_by_ip = {}
-        self.links = set()
+        self.links = []
+        self._link_set = set()
 
     def add_node(self, node: Node):
         """Register a node in the topology."""
@@ -44,10 +45,11 @@ class NetworkTopology:
         if link.node1.node_id not in self.nodes_by_id or link.node2.node_id not in self.nodes_by_id:
             raise ValueError("Both endpoints of the link must be added to the topology first")
         
-        if link in self.links:
+        if link in self._link_set:
             raise ValueError("This logical link already exists in the topology")
             
-        self.links.add(link)
+        self.links.append(link)
+        self._link_set.add(link)
 
     def get_link(self, ip1: str, ip2: str) -> Link:
         """Helper to fetch a specific logical link between two IPs."""

@@ -1,4 +1,5 @@
 import pytest
+import time
 from fastapi.testclient import TestClient
 
 from resqnet.backend.app.main import app
@@ -261,3 +262,140 @@ def test_websocket_initial_state_contract():
         assert "nodes" in data
         assert "links" in data
         assert "mode" in data
+
+
+def test_metric_consistency_pdr_and_loss_reconciliation():
+    """
+    Phase 5.3: Verify that PDR and Loss use consistent denominators and reconcile mathematically:
+    packets_sent = packets_delivered + packets_dropped -> PDR + Loss = 100.0%.
+    """
+    rt = RealNetworkRuntime()
+    assert rt.get_metrics()["pdr"] == "0%"
+    assert rt.get_metrics()["loss"] == "0%"
+    assert rt.get_metrics()["latency"] == "N/A"
+    assert rt.get_metrics()["throughput"] == "N/A"
+
+    # Simulate 4 packets sent: 2 delivered, 2 dropped
+    rt._handle_incoming_event({"type": "DATA_CREATED", "data": {"packet_id": "p1"}})
+    rt._handle_incoming_event({"type": "DATA_DROPPED", "data": {"packet_id": "p1", "reason": "NO_ROUTE"}})
+
+    rt._handle_incoming_event({"type": "DATA_CREATED", "data": {"packet_id": "p2"}})
+    rt._handle_incoming_event({"type": "DATA_DELIVERED", "data": {"packet_id": "p2", "hop_count": 3, "payload": "HELP"}})
+
+    rt._handle_incoming_event({"type": "DATA_CREATED", "data": {"packet_id": "p3"}})
+    rt._handle_incoming_event({"type": "DATA_DROPPED", "data": {"packet_id": "p3", "reason": "NO_ROUTE"}})
+
+    rt._handle_incoming_event({"type": "DATA_CREATED", "data": {"packet_id": "p4"}})
+    rt._handle_incoming_event({"type": "DATA_DELIVERED", "data": {"packet_id": "p4", "hop_count": 3, "payload": "RECOVERED"}})
+
+    metrics = rt.get_metrics()
+    assert metrics["packets_sent"] == 4
+    assert metrics["packets_delivered"] == 2
+    assert metrics["packets_dropped"] == 2
+    assert metrics["pdr"] == "50.0%"
+    assert metrics["loss"] == "50.0%"
+    assert metrics["avg_hop_count"] == "3.0"
+
+
+def test_route_recovery_time_and_discovery_time_measurement():
+    """
+    Phase 5.3: Verify route discovery and route recovery timers.
+    """
+    import time
+    rt = RealNetworkRuntime()
+    assert rt.metrics["route_discovery_time"] == "N/A"
+    assert rt.metrics["recovery_time"] == "N/A"
+
+    # 1. Route Discovery Time
+    rt._handle_incoming_event({"type": "RREQ_GENERATED", "data": {"node_id": "A", "destination_id": "H"}})
+    assert rt._route_discovery_start is not None
+    time.sleep(0.01)
+
+    rt._handle_incoming_event({
+        "type": "ROUTE_DISCOVERY_COMPLETED",
+        "data": {"node_id": "A", "dest": "H", "next_hop": "B"}
+    })
+    assert rt.metrics["route_discovery_time"] != "N/A"
+    assert "ms" in rt.metrics["route_discovery_time"]
+    assert rt._route_discovery_start is None
+
+    # 2. Recovery Time
+    # Invalidate route
+    rt._handle_incoming_event({
+        "type": "ROUTE_INVALIDATED",
+        "data": {"node_id": "A", "dest": "H"}
+    })
+    assert rt._route_recovery_start is not None
+    time.sleep(0.01)
+
+    rt._handle_incoming_event({
+        "type": "ROUTE_DISCOVERY_COMPLETED",
+        "data": {"node_id": "A", "dest": "H", "next_hop": "D"}
+    })
+    assert rt.metrics["recovery_time"] != "N/A"
+    assert "ms" in rt.metrics["recovery_time"]
+    assert rt._route_recovery_start is None
+
+
+def test_node_runtime_emits_data_dropped_on_no_route():
+    """
+    Phase 5.3: NodeRuntime must emit DATA_DROPPED when a DATA packet has no route.
+    """
+    from resqnet.backend.app.runtime.node import NodeRuntime
+    events = []
+    def record_event(etype, data):
+        events.append((etype, data))
+
+    endpoint_config = {
+        "A": ("127.0.0.1", 52010),
+        "H": ("127.0.0.1", 52014)
+    }
+    # No links connected between A and H
+    runtime = NodeRuntime("A", endpoint_config, topology_links=[], event_callback=record_event)
+    runtime.start()
+    try:
+        runtime.send_data("H", "TEST_PAYLOAD")
+        time.sleep(0.1)
+
+        event_types = [e[0] for e in events]
+        assert "DATA_CREATED" in event_types
+        assert "DATA_DROPPED" in event_types
+        drop_data = [e[1] for e in events if e[0] == "DATA_DROPPED"][0]
+        assert drop_data["node_id"] == "A"
+        assert drop_data["reason"] == "NO_ROUTE_AVAILABLE"
+    finally:
+        runtime.stop()
+
+
+def test_duplicate_sos_message_id_deduplication():
+    """
+    Phase 5.3: Hospital inbox de-duplicates identical message_ids while preserving distinct messages.
+    """
+    rt = RealNetworkRuntime()
+    sos_1 = {
+        "message_id": "sos-msg-1",
+        "source_id": "A",
+        "destination_id": "H",
+        "message": "HELP REQUIRED",
+        "status": "DELIVERED"
+    }
+    # Deliver initial SOS
+    rt._handle_incoming_event({"type": "SOS_DELIVERED", "data": sos_1})
+    assert len(rt.get_hospital_inbox()) == 1
+
+    # Deliver duplicate of initial SOS (e.g. transport retry)
+    rt._handle_incoming_event({"type": "SOS_DELIVERED", "data": dict(sos_1)})
+    assert len(rt.get_hospital_inbox()) == 1
+
+    # Deliver second distinct SOS (recovered SOS)
+    sos_2 = {
+        "message_id": "sos-msg-2",
+        "source_id": "A",
+        "destination_id": "H",
+        "message": "HELP REQUIRED (RECOVERED)",
+        "status": "DELIVERED"
+    }
+    rt._handle_incoming_event({"type": "SOS_DELIVERED", "data": sos_2})
+    assert len(rt.get_hospital_inbox()) == 2
+    assert [m["message"] for m in rt.get_hospital_inbox()] == ["HELP REQUIRED", "HELP REQUIRED (RECOVERED)"]
+
