@@ -7,6 +7,7 @@ import subprocess
 import signal
 import os
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from resqnet.backend.app.runtime.node import NodeRuntime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

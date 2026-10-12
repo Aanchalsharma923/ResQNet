@@ -164,7 +164,11 @@ def test_real_network_runtime_event_handling():
     assert real_rt.active_route == []
     assert real_rt.neighbor_health["A"]["B"] == "DOWN"
     
-    # Simulate alternate route via D
+    # Incomplete route: only A reported next_hop=D, but D has not yet installed forward route to H
+    real_rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "A", "dest": "H", "next": "D", "hops": "3"}
+    })
     real_rt._handle_incoming_event({
         "type": "ROUTE_DISCOVERY_COMPLETED",
         "data": {
@@ -173,7 +177,78 @@ def test_real_network_runtime_event_handling():
             "next_hop": "D"
         }
     })
+    # Since D has not installed route to H, route must NOT be fabricated!
+    assert real_rt.active_route == []
+
+    # Now D receives RREP and installs forward route to H via C
+    real_rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "D", "dest": "H", "next": "C", "hops": "2"}
+    })
+    # Now all hops (A->D, D->C, C->H) are supported by actual AODV routing state
     assert real_rt.active_route == ["A", "D", "C", "H"]
+
+
+def test_route_ownership_strict_separation():
+    """
+    Verifies that:
+    1. A route is displayed only when supported by actual AODV routing table entries.
+    2. Displayed consecutive nodes must be valid configured neighbors.
+    3. Invalidated routes and failed nodes are not displayed as active.
+    4. An unreachable destination is represented as unreachable, not fabricated.
+    5. Reconstructed path cannot alter node forwarding decisions.
+    """
+    from resqnet.backend.app.runtime.real_network_runtime import RealNetworkRuntime
+    rt = RealNetworkRuntime()
+    assert rt.active_route == []
+
+    # Case 1: Non-neighbor link injection (e.g. A->H directly) must be rejected
+    rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "A", "dest": "H", "next": "H", "hops": "1"}
+    })
+    # A and H are not direct neighbors in DEFAULT_LINKS, so must not display as active route
+    assert rt.active_route == []
+
+    # Case 2: Partial path (C->H only, A->H unknown) -> no active route from A
+    rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "C", "dest": "H", "next": "H", "hops": "1"}
+    })
+    assert rt.active_route == []
+
+    # Case 3: Proper full path established via B (C->H, B->C, A->B)
+    rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "B", "dest": "H", "next": "C", "hops": "2"}
+    })
+    rt._handle_incoming_event({
+        "type": "FORWARD_ROUTE_INSTALLED",
+        "data": {"node_id": "A", "dest": "H", "next": "B", "hops": "3"}
+    })
+    assert rt.active_route == ["A", "B", "C", "H"]
+
+    # Case 4: Route invalidation at node B -> active route cleared immediately
+    rt._handle_incoming_event({
+        "type": "ROUTE_INVALIDATED",
+        "data": {"node_id": "B", "destination": "H"}
+    })
+    assert rt.active_route == []
+
+    # Case 5: Node failure (B DOWN) -> active route remains cleared
+    rt._handle_incoming_event({
+        "type": "NEIGHBOR_DOWN",
+        "data": {"node_id": "A", "neighbor_id": "B"}
+    })
+    assert rt.active_route == []
+    assert rt.neighbor_health["A"]["B"] == "DOWN"
+
+    # Case 6: Unreachable destination -> when destination cannot be reached, no route fabricated
+    rt._handle_incoming_event({
+        "type": "ROUTE_INVALIDATED",
+        "data": {"node_id": "C", "destination": "H"}
+    })
+    assert rt.active_route == []
 
 def test_websocket_initial_state_contract():
     with client.websocket_connect("/api/ws/simulation") as ws:

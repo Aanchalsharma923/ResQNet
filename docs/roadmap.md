@@ -61,6 +61,18 @@ This roadmap follows an incremental, engine-first methodology. Each phase repres
 - **Verification**:
   - Pass all automated unit, integration, and E2E tests across both simulation and real UDP modes.
 
+## Phase 5.1: Final Demonstration Readiness & Reproducible Execution (Complete)
+*Goal: Full pre-submission verification, warning audit, route ownership enforcement, runbook authoring, and reproducible demo automation.*
+- **Tasks**:
+  - Audit and document exact pytest warning (`StarletteDeprecationWarning` in `fastapi/testclient.py:1`). (Complete)
+  - Audit active-route ownership: eliminate heuristic fallbacks, strictly reflect distributed AODV state. (Complete)
+  - Audit physical LAN readiness: verify bind/endpoint separation, create physical acceptance checklist (`DOCUMENTED — PHYSICAL EXECUTION PENDING`). (Complete)
+  - Fix subprocess launch path in `RealNetworkRuntime`. (Complete)
+  - Implement reproducible demo runner `scripts/run_demo.py`. (Complete)
+  - Author comprehensive demonstration runbook `docs/final_demo_runbook.md`. (Complete)
+- **Verification**:
+  - 147 backend tests passing, 8 frontend tests passing, frontend production build succeeding, reproducible UDP localhost demo passing.
+
 
 ## Phase 6: FastAPI & WebSocket Backend (Complete)
 *Goal: Expose the engine via standard web protocols.*

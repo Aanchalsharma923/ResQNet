@@ -81,34 +81,37 @@ class RealNetworkRuntime:
         self._load_config()
 
     def _recalculate_active_route(self, source_id: str = "A", destination_id: str = "H"):
+        """
+        Dynamically reconstructs the end-to-end path solely from actual
+        distributed AODV routing table entries reported by nodes.
+        Does NOT invent hops, infer paths from topological connectivity, or guess.
+        """
         curr = source_id
         route = [curr]
         visited = {curr}
-        while curr != destination_id:
-            nxt = None
-            if curr in self._routing_entries and destination_id in self._routing_entries[curr]:
-                nxt = self._routing_entries[curr][destination_id]
-            elif len(route) == 2:
-                # Follow topology links if intermediate nodes have not reported forward route entries
-                for link_a, link_b in self.topology_links:
-                    candidate = None
-                    if link_a == curr: candidate = link_b
-                    elif link_b == curr: candidate = link_a
-                    if candidate and candidate not in visited:
-                        if candidate == destination_id or candidate == "C":
-                            nxt = candidate
-                            break
+        while curr in self._routing_entries and destination_id in self._routing_entries[curr]:
+            nxt = self._routing_entries[curr][destination_id]
             if not nxt or nxt in visited:
                 break
+
+            # Verify that curr and nxt are valid configured neighbors
+            is_valid_neighbor = any(
+                (link[0] == curr and link[1] == nxt) or (link[1] == curr and link[0] == nxt)
+                for link in self.topology_links
+            )
+            if not is_valid_neighbor:
+                logger.warning(f"Rejecting invalid hop {curr} -> {nxt}: not configured neighbors")
+                break
+
             route.append(nxt)
             visited.add(nxt)
             curr = nxt
             if curr == destination_id:
                 self.active_route = route
                 return
-        if destination_id not in route:
-            if self.active_route and self.active_route[-1] == destination_id:
-                self.active_route.clear()
+
+        # If destination could not be reached through valid AODV routing entries
+        self.active_route = []
 
     def _load_config(self):
         try:
@@ -196,7 +199,7 @@ class RealNetworkRuntime:
             return True
             
         script_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../../../../../scripts/run_node.py")
+            os.path.join(os.path.dirname(__file__), "../../../../scripts/run_node.py")
         )
         ctrl_port = self.control_ports.get(node_id, 51010)
         cmd = [
@@ -239,6 +242,15 @@ class RealNetworkRuntime:
         del self.processes[node_id]
         self.node_status[node_id] = False
         
+        # Purge routing entries originating from or pointing to this stopped node
+        if node_id in self._routing_entries:
+            self._routing_entries[node_id].clear()
+        for n, d_map in self._routing_entries.items():
+            to_del = [d for d, nh in d_map.items() if nh == node_id]
+            for d in to_del:
+                del d_map[d]
+        self._recalculate_active_route("A", "H")
+
         # If this node was in active route, invalidate the route
         if node_id in self.active_route:
             self.active_route.clear()
@@ -373,13 +385,7 @@ class RealNetworkRuntime:
             self.hospital_inbox.append(data)
             
         elif event_type == "DATA_FORWARDED":
-            from_n = data.get("from_node")
-            to_n = data.get("to_node")
-            if from_n and to_n:
-                if from_n not in self._routing_entries:
-                    self._routing_entries[from_n] = {}
-                self._routing_entries[from_n]["H"] = to_n
-                self._recalculate_active_route("A", "H")
+            pass  # Animation event, does not alter routing state
 
         # Attach authoritative active route to route-related events
         if event_type in ("ROUTE_DISCOVERY_COMPLETED", "FORWARD_ROUTE_INSTALLED", "ROUTE_INVALIDATED", "NEIGHBOR_DOWN"):
