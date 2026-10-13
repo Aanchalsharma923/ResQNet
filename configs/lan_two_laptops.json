@@ -1,0 +1,23 @@
+{
+  "_comment": "Example configuration for two laptops. Set $env:LAPTOP_1_IP and $env:LAPTOP_2_IP before starting, or replace 127.0.0.1 with your actual LAN IPv4 addresses.",
+  "A": {
+    "host": "${LAPTOP_1_IP:-127.0.0.1}",
+    "port": 50010
+  },
+  "B": {
+    "host": "${LAPTOP_1_IP:-127.0.0.1}",
+    "port": 50011
+  },
+  "C": {
+    "host": "${LAPTOP_1_IP:-127.0.0.1}",
+    "port": 50012
+  },
+  "D": {
+    "host": "${LAPTOP_1_IP:-127.0.0.1}",
+    "port": 50013
+  },
+  "H": {
+    "host": "${LAPTOP_2_IP:-127.0.0.1}",
+    "port": 50014
+  }
+}

@@ -45,6 +45,12 @@ class NodeRuntime:
         self._control_sock: Optional[socket.socket] = None
         self._control_thread: Optional[threading.Thread] = None
 
+        # ACK tracking & deduplication state
+        self._pending_acks: Dict[str, dict] = {}
+        self._ack_timers: Dict[str, threading.Timer] = {}
+        self._ack_lock = threading.Lock()
+        self.processed_sos: Dict[str, dict] = {}
+
         # Build a virtual topology for the AODV router to query neighbors
         self.topology = self._build_virtual_topology()
         
@@ -161,7 +167,16 @@ Status: READY
         })
 
     def stop(self):
-        """Stops the transport and runtime."""
+        # Cancel all active ACK timers and clear pending state unconditionally
+        with self._ack_lock:
+            for timer in self._ack_timers.values():
+                try:
+                    timer.cancel()
+                except Exception:
+                    pass
+            self._ack_timers.clear()
+            self._pending_acks.clear()
+
         if not self.is_running:
             return
             
@@ -231,9 +246,27 @@ Status: READY
 
     def send_sos(self, sos_request: dict):
         """
-        Sends an SOS distress message wrapped in a standard DATA packet.
+        Sends an SOS distress message wrapped in a standard DATA packet and tracks return ACK.
         """
         message_id = sos_request.get("message_id") or str(uuid.uuid4())
+        dest_id = sos_request.get("destination_id", "H")
+        timeout_seconds = float(sos_request.get("timeout_seconds", 5.0))
+
+        with self._ack_lock:
+            self._pending_acks[message_id] = {
+                "message_id": message_id,
+                "source_id": self.node_id,
+                "destination_id": dest_id,
+                "status": "PENDING",
+                "created_at": time.time(),
+                "timeout_seconds": timeout_seconds,
+                "confirmed_at": None,
+                "rtt_ms": None
+            }
+            timer = threading.Timer(timeout_seconds, self._on_ack_timeout, args=[message_id])
+            self._ack_timers[message_id] = timer
+            timer.start()
+
         payload = {
             "type": "sos",
             "message_id": message_id,
@@ -242,7 +275,6 @@ Status: READY
             "longitude": sos_request.get("longitude", 73.8567),
             "priority": sos_request.get("priority", "HIGH")
         }
-        dest_id = sos_request.get("destination_id", "H")
         self._emit_event("SOS_SENT", {
             "message_id": message_id,
             "source_id": self.node_id,
@@ -254,6 +286,35 @@ Status: READY
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
         self.send_data(dest_id, payload)
+        return {
+            "success": True,
+            "message_id": message_id,
+            "ack_status": "PENDING"
+        }
+
+    def _on_ack_timeout(self, message_id: str):
+        with self._ack_lock:
+            if message_id in self._pending_acks:
+                record = self._pending_acks[message_id]
+                if record["status"] == "PENDING":
+                    record["status"] = "TIMEOUT"
+                    if message_id in self._ack_timers:
+                        del self._ack_timers[message_id]
+                    self._emit_event("ACK_TIMEOUT", {
+                        "message_id": message_id,
+                        "source_id": self.node_id,
+                        "hospital_id": record["destination_id"],
+                        "timeout_sec": record["timeout_seconds"],
+                        "status": "TIMEOUT"
+                    })
+
+    def get_sos_status(self, message_id: str) -> Optional[dict]:
+        with self._ack_lock:
+            return self._pending_acks.get(message_id)
+
+    def get_pending_acks(self) -> Dict[str, dict]:
+        with self._ack_lock:
+            return dict(self._pending_acks)
 
     def _send_hello(self, neighbor_id: str):
         packet = Packet(
@@ -397,22 +458,109 @@ Status: READY
                 }
                 self._emit_event("DATA_DELIVERED", deliv_data)
                 
-                # Check for SOS payload delivery
+                # Check for SOS payload delivery at Hospital-H
                 if isinstance(packet.payload, dict) and packet.payload.get("type") == "sos":
-                    sos_entry = {
-                        "message_id": packet.payload.get("message_id"),
-                        "source_id": packet.source_id,
-                        "destination_id": packet.destination_id,
-                        "message": packet.payload.get("message"),
-                        "latitude": packet.payload.get("latitude"),
-                        "longitude": packet.payload.get("longitude"),
-                        "priority": packet.payload.get("priority"),
-                        "status": "DELIVERED",
-                        "packet_id": packet.packet_id,
-                        "hop_count": packet.hop_count,
+                    msg_id = packet.payload.get("message_id")
+                    is_dup = msg_id in self.processed_sos
+                    if not is_dup:
+                        self.processed_sos[msg_id] = {
+                            "created_at": time.time(),
+                            "ack_count": 1
+                        }
+                        sos_entry = {
+                            "message_id": msg_id,
+                            "source_id": packet.source_id,
+                            "destination_id": packet.destination_id,
+                            "message": packet.payload.get("message"),
+                            "latitude": packet.payload.get("latitude"),
+                            "longitude": packet.payload.get("longitude"),
+                            "priority": packet.payload.get("priority"),
+                            "status": "DELIVERED",
+                            "packet_id": packet.packet_id,
+                            "hop_count": packet.hop_count,
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                        self._emit_event("SOS_DELIVERED", sos_entry)
+                    else:
+                        self.processed_sos[msg_id]["ack_count"] += 1
+                        logger.info(f"[{self.node_id}] Duplicate SOS received for {msg_id}; retransmitting ACK")
+
+                    # Hospital generates ACK DATA packet addressed to sender (packet.source_id)
+                    ack_payload = {
+                        "type": "ack",
+                        "ack_for_message_id": msg_id,
+                        "is_retransmit": is_dup,
+                        "retransmit_count": self.processed_sos[msg_id]["ack_count"],
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
-                    self._emit_event("SOS_DELIVERED", sos_entry)
+                    self._emit_event("ACK_SENT", {
+                        "message_id": msg_id,
+                        "source_id": self.node_id,
+                        "destination_id": packet.source_id,
+                        "is_retransmit": is_dup
+                    })
+                    self.send_data(packet.source_id, ack_payload)
+                    return
+
+                # Check for ACK payload delivery at Rescue-A
+                elif isinstance(packet.payload, dict) and packet.payload.get("type") == "ack":
+                    is_valid, reason, msg_id = self._validate_ack_packet(packet)
+                    if not is_valid:
+                        logger.warning(f"[{self.node_id}] Rejected invalid ACK packet: reason={reason}")
+                        self._emit_event("ACK_INVALID", {
+                            "node_id": self.node_id,
+                            "reason": reason,
+                            "packet_id": packet.packet_id,
+                            "source_id": packet.source_id
+                        })
+                        return
+
+                    with self._ack_lock:
+                        record = self._pending_acks.get(msg_id)
+                        if not record:
+                            self._emit_event("ACK_INVALID", {
+                                "node_id": self.node_id,
+                                "reason": "UNKNOWN_MESSAGE_ID",
+                                "message_id": msg_id
+                            })
+                            return
+
+                        curr_status = record["status"]
+                        now = time.time()
+                        if curr_status == "PENDING":
+                            record["status"] = "CONFIRMED"
+                            record["confirmed_at"] = now
+                            rtt_ms = (now - record["created_at"]) * 1000
+                            record["rtt_ms"] = rtt_ms
+                            if msg_id in self._ack_timers:
+                                self._ack_timers[msg_id].cancel()
+                                del self._ack_timers[msg_id]
+                            self._emit_event("ACK_RECEIVED", {
+                                "message_id": msg_id,
+                                "source_id": self.node_id,
+                                "hospital_id": packet.source_id,
+                                "rtt_ms": round(rtt_ms, 2),
+                                "status": "CONFIRMED"
+                            })
+                        elif curr_status == "TIMEOUT":
+                            record["status"] = "LATE_CONFIRMED"
+                            record["late_confirmed_at"] = now
+                            rtt_ms = (now - record["created_at"]) * 1000
+                            record["rtt_ms"] = rtt_ms
+                            self._emit_event("ACK_RECEIVED_LATE", {
+                                "message_id": msg_id,
+                                "source_id": self.node_id,
+                                "hospital_id": packet.source_id,
+                                "rtt_ms": round(rtt_ms, 2),
+                                "status": "LATE_CONFIRMED"
+                            })
+                        elif curr_status in ("CONFIRMED", "LATE_CONFIRMED"):
+                            self._emit_event("ACK_DUPLICATE_IGNORED", {
+                                "message_id": msg_id,
+                                "source_id": self.node_id,
+                                "hospital_id": packet.source_id,
+                                "status": curr_status
+                            })
                 return
             elif packet.packet_type == PacketType.RREQ:
                 packet.mark_delivered()
@@ -535,4 +683,29 @@ Status: READY
                         "packet_id": packet.packet_id
                     })
             self.transport.send(packet, next_hops)
+
+    def _validate_ack_packet(self, packet: Packet) -> Tuple[bool, str, Optional[str]]:
+        """
+        Validates that an ACK received at Rescue-A conforms to all protocol requirements:
+        1. packet_type is DATA
+        2. destination_id is self.node_id
+        3. source_id is 'H'
+        4. payload is dict with type == 'ack'
+        5. ack_for_message_id is non-empty string
+        6. ack_for_message_id matches an SOS previously initiated by this node
+        """
+        if packet.packet_type != PacketType.DATA:
+            return False, "PACKET_TYPE_NOT_DATA", None
+        if packet.destination_id != self.node_id:
+            return False, "DESTINATION_NOT_ME", None
+        if packet.source_id != "H":
+            return False, "SOURCE_NOT_H", None
+        if not isinstance(packet.payload, dict) or packet.payload.get("type") != "ack":
+            return False, "PAYLOAD_NOT_ACK", None
+        msg_id = packet.payload.get("ack_for_message_id")
+        if not msg_id or not isinstance(msg_id, str):
+            return False, "MISSING_MESSAGE_ID", None
+        if msg_id not in self._pending_acks:
+            return False, "UNKNOWN_MESSAGE_ID", msg_id
+        return True, "VALID", msg_id
 

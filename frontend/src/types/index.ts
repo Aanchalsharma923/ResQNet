@@ -62,3 +62,47 @@ export interface Metrics {
   latency: string;
   throughput: string;
 }
+
+export interface DemoStageInfo {
+  stage: number;
+  name: string;
+  concept: string;
+  scenario: string;
+  observations: string[];
+  examiner_notes: string;
+}
+
+export interface DemoSummary {
+  sos_dispatched: number;
+  sos_delivered: number;
+  acks_confirmed: number;
+  packets_dropped: number;
+  pdr: string;
+  recovery_time: string;
+  active_route_at_conclusion: string[];
+  hop_count: number;
+  rreq_count: number;
+  rrep_count: number;
+  rerr_count: number;
+  mode: string;
+  mode_explanation: string;
+  confirmed_messages: Array<{
+    message_id: string;
+    status: string;
+    rtt_ms?: number;
+  }>;
+}
+
+export interface DemoState {
+  current_stage: number;
+  total_stages: number;
+  status: 'ready' | 'running' | 'completed' | 'error';
+  mode: RuntimeMode;
+  stage_info: DemoStageInfo;
+  active_route: string[];
+  active_nodes: string[];
+  metrics: Metrics;
+  hospital_inbox: SOSMessage[];
+  last_action_result?: any;
+  summary?: DemoSummary | null;
+}

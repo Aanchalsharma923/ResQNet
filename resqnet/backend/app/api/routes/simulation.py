@@ -22,6 +22,17 @@ def get_network():
 def reset_simulation():
     return runtime_manager.reset()
 
+@router.post("/simulation/advance_time")
+def advance_simulation_time(seconds: float = 1.0):
+    return runtime_manager.advance_sim_time(seconds)
+
+@router.get("/sos/status/{message_id}")
+def get_sos_status(message_id: str):
+    status = runtime_manager.get_sos_status(message_id)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"SOS message {message_id} not found")
+    return status
+
 @router.get("/events", response_model=List[str])
 def get_events():
     return runtime_manager.get_events()
@@ -130,6 +141,7 @@ def start_runtime_node(node_id: str):
 
 # ==================== WebSocket ====================
 
+@router.websocket("/ws")
 @router.websocket("/ws/simulation")
 async def websocket_simulation(websocket: WebSocket):
     await websocket.accept()

@@ -131,5 +131,23 @@ class RuntimeManager:
             }
         }
 
+    def advance_sim_time(self, seconds: float = 1.0) -> dict:
+        if self.mode == "simulation":
+            timed_out = self.simulation_service.advance_sim_time(seconds)
+            return {
+                "status": "advanced",
+                "seconds": seconds,
+                "sim_time": self.simulation_service.engine.get_sim_time(),
+                "timed_out_ids": timed_out
+            }
+        else:
+            return {"status": "ignored", "reason": "real runtime operates on wall-clock time"}
+
+    def get_sos_status(self, message_id: str) -> Optional[dict]:
+        if self.mode == "real":
+            return self.real_runtime.get_sos_status(message_id)
+        else:
+            return self.simulation_service.get_sos_status(message_id)
+
 # Global singleton instance
 runtime_manager = RuntimeManager()

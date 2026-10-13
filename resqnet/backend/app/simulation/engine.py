@@ -19,6 +19,8 @@ class SimulationEngine:
         self.routers = routers
         self.events: List[str] = []
         self.pending_messages: List[Packet] = []
+        self.sim_time: float = 0.0
+        self.hop_delay: float = 0.05
         
         if transport is None:
             from resqnet.backend.app.transport.simulation import SimulationTransport
@@ -28,6 +30,12 @@ class SimulationEngine:
             
         self.transport.set_receive_callback(self._on_packet_received_from_transport)
         self.transport.start()
+
+    def get_sim_time(self) -> float:
+        return self.sim_time
+
+    def advance_sim_time(self, seconds: float):
+        self.sim_time += seconds
 
     def _on_packet_received_from_transport(self, packet: Packet):
         self.pending_messages.append(packet)
@@ -109,7 +117,9 @@ class SimulationEngine:
         # 4 & 5. Use Transport to send the packet to next_hops
         success = self.transport.send(packet, next_hops)
         
-        if not success:
+        if success:
+            self.sim_time += self.hop_delay
+        else:
             packet.mark_dropped()
             if packet.packet_type.name not in ["RREQ", "RERR"]:
                 self._log_event("NEXT_HOP_UNAVAILABLE", packet)

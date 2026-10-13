@@ -1,6 +1,13 @@
 import type { NetworkState, Metrics, RuntimeMode } from '../types';
 
-const API_BASE = 'http://localhost:8000/api';
+const getApiBase = () => {
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    return `http://${window.location.hostname}:8000/api`;
+  }
+  return 'http://localhost:8000/api';
+};
+
+const API_BASE = (import.meta as any).env?.VITE_API_URL || getApiBase();
 
 export const fetchNetworkState = async (): Promise<NetworkState> => {
   const res = await fetch(`${API_BASE}/network`);
@@ -113,6 +120,36 @@ export const stopRealNode = async (nodeId: string) => {
 
 export const startRealNode = async (nodeId: string) => {
   const res = await fetch(`${API_BASE}/runtime/nodes/${nodeId}/start`, { method: 'POST' });
+  return res.json();
+};
+
+export const fetchDemoStatus = async () => {
+  const res = await fetch(`${API_BASE}/demo/status`);
+  return res.json();
+};
+
+export const startDemo = async () => {
+  const res = await fetch(`${API_BASE}/demo/start`, { method: 'POST' });
+  return res.json();
+};
+
+export const nextDemoStage = async () => {
+  const res = await fetch(`${API_BASE}/demo/next`, { method: 'POST' });
+  return res.json();
+};
+
+export const prevDemoStage = async () => {
+  const res = await fetch(`${API_BASE}/demo/prev`, { method: 'POST' });
+  return res.json();
+};
+
+export const stepDemoStage = async (stage: number) => {
+  const res = await fetch(`${API_BASE}/demo/step/${stage}`, { method: 'POST' });
+  return res.json();
+};
+
+export const resetDemo = async () => {
+  const res = await fetch(`${API_BASE}/demo/reset`, { method: 'POST' });
   return res.json();
 };
 

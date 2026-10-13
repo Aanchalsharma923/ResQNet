@@ -12,11 +12,11 @@ interface NodePos {
 }
 
 const DEFAULT_POSITIONS: Record<string, NodePos> = {
-  A: { x: 200, y: 250 },
-  B: { x: 350, y: 100 },
-  C: { x: 500, y: 250 },
-  D: { x: 350, y: 400 },
-  H: { x: 700, y: 250 },
+  A: { x: 160, y: 250 },
+  B: { x: 380, y: 120 },
+  C: { x: 600, y: 250 },
+  D: { x: 380, y: 370 },
+  H: { x: 800, y: 250 },
 };
 
 interface PacketAnimation {
@@ -34,17 +34,16 @@ const TopologyView = ({ networkState, events }: TopologyViewProps) => {
   const nodePositions = useMemo(() => {
     const positions: Record<string, NodePos> = { ...DEFAULT_POSITIONS };
     const dynamicNodes = networkState.nodes.filter(n => !positions[n.node_id]);
-    
+
     // Arrange additional nodes in a deterministic grid/circle pattern
     if (dynamicNodes.length > 0) {
-      const centerX = 450;
+      const centerX = 480;
       const centerY = 250;
-      const radius = 220; // Try to keep them inside the SVG
+      const radius = 210; // Keep inside the SVG
       const angleStep = (2 * Math.PI) / dynamicNodes.length;
-      
+
       dynamicNodes.forEach((node, idx) => {
-        // Offset angle to start at top, or somewhere else
-        const angle = idx * angleStep + Math.PI / 4; 
+        const angle = idx * angleStep + Math.PI / 4;
         positions[node.node_id] = {
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle),
@@ -57,7 +56,7 @@ const TopologyView = ({ networkState, events }: TopologyViewProps) => {
   useEffect(() => {
     if (events.length === 0) return;
     const latest = events[0];
-    
+
     let fromNode = '';
     let toNode = '';
     let packetType = '';
@@ -111,44 +110,31 @@ const TopologyView = ({ networkState, events }: TopologyViewProps) => {
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div className="topology-container">
       {/* Route Status Banner */}
-      <div style={{
-        position: 'absolute',
-        top: 10,
-        left: 10,
-        background: 'rgba(20, 20, 20, 0.85)',
-        border: '1px solid #444',
-        borderRadius: 4,
-        padding: '6px 12px',
-        fontSize: '0.8rem',
-        zIndex: 10,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        <span style={{ color: '#aaa', textTransform: 'uppercase', fontWeight: 'bold' }}>Active AODV Route:</span>
+      <div className="route-banner">
+        <span style={{ color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold' }}>Active AODV Route:</span>
         {networkState.active_route && networkState.active_route.length > 0 ? (
           <span style={{ color: '#00e676', fontWeight: 'bold' }}>
             {networkState.active_route.join(' → ')}
           </span>
         ) : (
-          <span style={{ color: '#ffb300', fontStyle: 'italic' }}>
+          <span style={{ color: '#fbbf24', fontStyle: 'italic' }}>
             No active route (AODV discovery / recovering)
           </span>
         )}
       </div>
 
-      <svg className="topology-svg" viewBox="0 0 900 500">
+      <svg className="topology-svg" viewBox="0 0 960 500" preserveAspectRatio="xMidYMid meet">
         {/* Draw Links */}
         {networkState.links.map(link => {
           const posA = nodePositions[link.node_a_id];
           const posB = nodePositions[link.node_b_id];
           if (!posA || !posB) return null;
-          
+
           const key = [link.node_a_id, link.node_b_id].sort().join('-');
           const isActiveRoute = isActiveRouteLink(link.node_a_id, link.node_b_id);
-          
+
           return (
             <line
               key={key}
@@ -182,22 +168,62 @@ const TopologyView = ({ networkState, events }: TopologyViewProps) => {
           const pos = nodePositions[node.node_id];
           if (!pos) return null;
           const isHospital = node.node_id === 'H';
+          const isRescue = node.node_id === 'A';
+          const isAltRelay = node.node_id === 'D';
           const displayAddr = node.endpoint || node.ip_address;
+
+          let roleLabel = `Relay-${node.node_id}`;
+          if (isRescue) roleLabel = 'Rescue-A';
+          if (isHospital) roleLabel = 'Hospital-H';
+          if (isAltRelay) roleLabel = 'Relay-D (Alt)';
+
           return (
             <g key={node.node_id} transform={`translate(${pos.x}, ${pos.y})`}>
+              {/* Outer status ring */}
               <circle
-                r={25}
-                className={`node ${!node.is_active ? 'failed' : ''} ${isHospital ? 'hospital' : ''}`}
+                r={28}
+                fill="none"
+                stroke={!node.is_active ? '#ef4444' : isHospital ? '#10b981' : '#38bdf8'}
+                strokeWidth={1.5}
+                strokeDasharray={!node.is_active ? '4,4' : undefined}
+                opacity={0.7}
               />
-              <text y={5} className="node-label">{node.node_id}</text>
-              <text y={40} className="node-ip">{displayAddr}</text>
-              {!node.is_active && (
-                <text y={54} fill="#ff5252" fontSize="10" textAnchor="middle" fontWeight="bold">DOWN</text>
+              <circle
+                r={24}
+                className={`node ${!node.is_active ? 'failed' : ''} ${isHospital ? 'hospital' : ''} ${node.is_active ? 'active' : ''}`}
+              />
+              <text y={4} className="node-label">{node.node_id}</text>
+              <text y={38} className="node-sublabel">{roleLabel}</text>
+              <text y={49} className="node-ip">{displayAddr}</text>
+              {!node.is_active ? (
+                <text y={61} fill="#ff5252" fontSize="10" textAnchor="middle" fontWeight="bold">DOWN</text>
+              ) : (
+                <text y={61} fill="#34d399" fontSize="9" textAnchor="middle" fontWeight="bold">UP</text>
               )}
             </g>
           );
         })}
       </svg>
+
+      {/* Legend */}
+      <div className="topology-legend">
+        <div className="legend-item">
+          <span className="legend-swatch" style={{ background: '#00e676', boxShadow: '0 0 6px #00e676' }}></span>
+          <span>Active AODV Path</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-swatch" style={{ background: '#334155' }}></span>
+          <span>Mesh Link</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-swatch" style={{ background: '#ef4444', border: '1px dashed #ef4444' }}></span>
+          <span>Severed Link</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-swatch" style={{ background: '#10b981' }}></span>
+          <span>Hospital (H)</span>
+        </div>
+      </div>
     </div>
   );
 };

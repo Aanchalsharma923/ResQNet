@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple, Any
 
 from resqnet.backend.app.services.broadcaster import broadcaster
+from resqnet.backend.app.config_loader import load_node_endpoints
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +42,18 @@ class RealNetworkRuntime:
     Does NOT perform routing; routing is exclusively performed by AODV within each node.
     """
     def __init__(self, config_path: str = DEFAULT_CONFIG_PATH, event_port: int = 50099):
-        self.config_path = config_path
+        self.config_path = os.environ.get("RESQNET_CONFIG_PATH") or os.environ.get("RESQNET_CONFIG", config_path)
         self.event_port = event_port
+        self.event_bind_host = os.environ.get("RESQNET_EVENT_BIND_HOST", "0.0.0.0")
+        managed = os.environ.get("RESQNET_MANAGED_NODES")
+        self.managed_nodes = [n.strip() for n in managed.split(",") if n.strip()] if managed else None
+
         self.processes: Dict[str, subprocess.Popen] = {}
         self.is_running = False
-        
+
         self.event_listener_sock: Optional[socket.socket] = None
         self.event_listener_thread: Optional[threading.Thread] = None
-        
+
         self.endpoint_config: Dict[str, Tuple[str, int]] = {}
         self.control_ports: Dict[str, int] = {}
         self.node_status: Dict[str, bool] = {}
@@ -56,7 +61,7 @@ class RealNetworkRuntime:
         self.neighbor_health: Dict[str, Dict[str, str]] = {}
         self.hospital_inbox: List[dict] = []
         self.recent_events: List[str] = []
-        
+
         # Metrics tracking
         self.metrics = {
             "packets_sent": 0,
@@ -71,7 +76,7 @@ class RealNetworkRuntime:
             "latency": "N/A",
             "throughput": "N/A"
         }
-        
+
         self._route_discovery_start: Optional[float] = None
         self._route_recovery_start: Optional[float] = None
         self._packet_send_times: Dict[str, float] = {}
@@ -80,6 +85,7 @@ class RealNetworkRuntime:
         self._total_transit_time: float = 0.0
 
         self._routing_entries: Dict[str, Dict[str, str]] = {}
+        self._sos_status: Dict[str, dict] = {}
         self.topology_links = DEFAULT_LINKS
         self._load_config()
 
@@ -118,10 +124,7 @@ class RealNetworkRuntime:
 
     def _load_config(self):
         try:
-            with open(self.config_path, "r") as f:
-                raw = json.load(f)
-            nodes = raw["nodes"] if "nodes" in raw else raw
-            self.endpoint_config = {k: (v["host"], v["port"]) for k, v in nodes.items()}
+            self.endpoint_config = load_node_endpoints(self.config_path)
             # Derive control port as port + 1000
             self.control_ports = {k: v[1] + 1000 for k, v in self.endpoint_config.items()}
             for k in self.endpoint_config:
@@ -134,17 +137,24 @@ class RealNetworkRuntime:
         """Starts the event bridge and launches all configured node processes."""
         if self.is_running:
             return
+        self.config_path = os.environ.get("RESQNET_CONFIG_PATH") or os.environ.get("RESQNET_CONFIG", self.config_path)
+        managed = os.environ.get("RESQNET_MANAGED_NODES")
+        if managed:
+            self.managed_nodes = [n.strip() for n in managed.split(",") if n.strip()]
+        self._load_config()
         logger.info("Starting RealNetworkRuntime...")
         self.is_running = True
-        
+
         # 1. Start event listener
         self._start_event_listener()
-        
-        # 2. Launch child processes for all nodes
-        for node_id in self.endpoint_config:
-            self.start_node(node_id)
-            
-        logger.info("RealNetworkRuntime started.")
+
+        # 2. Launch child processes for managed nodes (or all nodes if not specified)
+        target_nodes = self.managed_nodes if self.managed_nodes is not None else list(self.endpoint_config.keys())
+        for node_id in target_nodes:
+            if node_id in self.endpoint_config:
+                self.start_node(node_id)
+
+        logger.info(f"RealNetworkRuntime started. Managed nodes: {target_nodes}")
 
     def stop(self):
         """Stops all running node processes and shuts down the event listener."""
@@ -152,11 +162,11 @@ class RealNetworkRuntime:
             return
         logger.info("Stopping RealNetworkRuntime...")
         self.is_running = False
-        
+
         # Stop all node processes
         for node_id in list(self.processes.keys()):
             self.stop_node(node_id)
-            
+
         # Stop event listener socket
         if self.event_listener_sock:
             try:
@@ -164,7 +174,7 @@ class RealNetworkRuntime:
             except Exception:
                 pass
             self.event_listener_sock = None
-            
+
         logger.info("RealNetworkRuntime stopped.")
 
     def reset(self):
@@ -175,6 +185,7 @@ class RealNetworkRuntime:
         self.recent_events.clear()
         self.active_route.clear()
         self._routing_entries.clear()
+        self._sos_status.clear()
         self._delivered_latencies.clear()
         self._delivered_bytes = 0
         self._total_transit_time = 0.0
@@ -202,11 +213,17 @@ class RealNetworkRuntime:
         if node_id not in self.endpoint_config:
             logger.error(f"Cannot start unknown node {node_id}")
             return False
-            
+
+        if self.managed_nodes is not None and node_id not in self.managed_nodes:
+            logger.info(f"Node {node_id} is remote/unmanaged; marking as active.")
+            self.node_status[node_id] = True
+            broadcaster.broadcast_sync("NODE_RECOVERED", {"node_id": node_id})
+            return True
+
         if node_id in self.processes and self.processes[node_id].poll() is None:
             logger.info(f"Node {node_id} is already running.")
             return True
-            
+
         script_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "../../../../scripts/run_node.py")
         )
@@ -220,13 +237,13 @@ class RealNetworkRuntime:
             "--event-port", str(self.event_port),
             "--control-port", str(ctrl_port)
         ]
-        
+
         try:
             logger.info(f"Launching process for node {node_id}: {' '.join(cmd)}")
             p = subprocess.Popen(cmd)
             self.processes[node_id] = p
             self.node_status[node_id] = True
-            
+
             broadcaster.broadcast_sync("NODE_RECOVERED", {"node_id": node_id})
             return True
         except Exception as e:
@@ -234,11 +251,27 @@ class RealNetworkRuntime:
             return False
 
     def stop_node(self, node_id: str) -> bool:
-        """Stops the real process for the specified node."""
+        """Stops the real process for the specified node, or marks remote node stopped."""
         if node_id not in self.processes:
-            self.node_status[node_id] = False
+            if node_id in self.endpoint_config:
+                self.node_status[node_id] = False
+                was_in_active_route = (node_id in self.active_route)
+                if node_id in self._routing_entries:
+                    self._routing_entries[node_id].clear()
+                for n, d_map in self._routing_entries.items():
+                    to_del = [d for d, nh in d_map.items() if nh == node_id]
+                    for d in to_del:
+                        del d_map[d]
+                self._recalculate_active_route("A", "H")
+                if was_in_active_route:
+                    self.active_route.clear()
+                    if self._route_recovery_start is None:
+                        self._route_recovery_start = time.time()
+                    broadcaster.broadcast_sync("ROUTE_INVALIDATED", {"invalidated_node": node_id})
+                broadcaster.broadcast_sync("NODE_FAILED", {"node_id": node_id})
+                return True
             return False
-            
+
         p = self.processes[node_id]
         if p.poll() is None:
             logger.info(f"Terminating process for node {node_id} (PID: {p.pid})...")
@@ -247,10 +280,10 @@ class RealNetworkRuntime:
                 p.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 p.kill()
-                
+
         del self.processes[node_id]
         self.node_status[node_id] = False
-        
+
         was_in_active_route = (node_id in self.active_route)
 
         # Purge routing entries originating from or pointing to this stopped node
@@ -268,20 +301,20 @@ class RealNetworkRuntime:
             if self._route_recovery_start is None:
                 self._route_recovery_start = time.time()
             broadcaster.broadcast_sync("ROUTE_INVALIDATED", {"invalidated_node": node_id})
-            
+
         broadcaster.broadcast_sync("NODE_FAILED", {"node_id": node_id})
         return True
 
     def _start_event_listener(self):
-        """Starts the UDP event socket listener on 127.0.0.1:<event_port>."""
+        """Starts the UDP event socket listener on <event_bind_host>:<event_port>."""
         try:
             self.event_listener_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.event_listener_sock.bind(("127.0.0.1", self.event_port))
+            self.event_listener_sock.bind((self.event_bind_host, self.event_port))
             self.event_listener_thread = threading.Thread(target=self._event_listener_loop, daemon=True)
             self.event_listener_thread.start()
-            logger.info(f"Event listener bound to 127.0.0.1:{self.event_port}")
+            logger.info(f"Event listener bound to {self.event_bind_host}:{self.event_port}")
         except Exception as e:
-            logger.error(f"Failed to start event listener on port {self.event_port}: {e}")
+            logger.error(f"Failed to start event listener on {self.event_bind_host}:{self.event_port}: {e}")
 
     def _event_listener_loop(self):
         while self.is_running:
@@ -302,7 +335,15 @@ class RealNetworkRuntime:
         """Processes structured events received from node processes and broadcasts them."""
         event_type = event.get("type", "UNKNOWN")
         data = event.get("data", {})
-        
+
+        # Track node activity from received events
+        source_nid = data.get("node_id")
+        if source_nid and source_nid in self.endpoint_config:
+            if event_type in ("NODE_STOPPED", "NODE_FAILED"):
+                self.node_status[source_nid] = False
+            else:
+                self.node_status[source_nid] = True
+
         # Log recent event
         self.recent_events.append(f"[{data.get('node_id', '?')}] {event_type}")
         if len(self.recent_events) > 200:
@@ -314,7 +355,7 @@ class RealNetworkRuntime:
             pkt_id = data.get("packet_id")
             if pkt_id:
                 self._packet_send_times[pkt_id] = time.time()
-                
+
         elif event_type == "DATA_DELIVERED":
             self.metrics["packets_delivered"] += 1
             self.metrics["total_hop_count"] += data.get("hop_count", 0)
@@ -324,7 +365,7 @@ class RealNetworkRuntime:
                 self._delivered_latencies.append(lat)
                 avg_lat = sum(self._delivered_latencies) / len(self._delivered_latencies)
                 self.metrics["latency"] = f"{avg_lat:.1f}ms"
-                
+
                 payload = data.get("payload", "")
                 payload_bytes = len(payload.encode("utf-8")) if isinstance(payload, str) else len(str(payload).encode("utf-8"))
                 self._delivered_bytes += payload_bytes
@@ -332,30 +373,31 @@ class RealNetworkRuntime:
                 if self._total_transit_time > 0:
                     throughput_kbps = (self._delivered_bytes * 8) / (self._total_transit_time * 1000)
                     self.metrics["throughput"] = f"{throughput_kbps:.1f} kbps"
-                
+
         elif event_type == "DATA_DROPPED":
             self.metrics["packets_dropped"] += 1
-            
+
         elif event_type == "RREQ_GENERATED":
             self.metrics["rreq_count"] += 1
             if self._route_discovery_start is None:
                 self._route_discovery_start = time.time()
-                
+
         elif event_type == "RREP_GENERATED":
             self.metrics["rrep_count"] += 1
-            
+
         elif event_type == "RERR_GENERATED":
             self.metrics["rerr_count"] += 1
-            
+
         elif event_type in ("FORWARD_ROUTE_INSTALLED", "ROUTE_DISCOVERY_COMPLETED"):
             nid = data.get("node_id")
             dest = data.get("dest") or data.get("destination")
             nxt = data.get("next") or data.get("next_hop")
             if nid and dest and nxt:
-                if nid not in self._routing_entries:
-                    self._routing_entries[nid] = {}
-                self._routing_entries[nid][dest] = nxt
-                self._recalculate_active_route("A", dest)
+                if nid in self.endpoint_config and dest in self.endpoint_config and nxt in self.endpoint_config:
+                    if nid not in self._routing_entries:
+                        self._routing_entries[nid] = {}
+                    self._routing_entries[nid][dest] = nxt
+                    self._recalculate_active_route("A", dest)
 
             if event_type == "ROUTE_DISCOVERY_COMPLETED":
                 if self._route_discovery_start is not None:
@@ -380,42 +422,71 @@ class RealNetworkRuntime:
         elif event_type == "NEIGHBOR_DOWN":
             nid = data.get("node_id")
             neighbor = data.get("neighbor_id")
-            if nid and neighbor:
+            if nid and neighbor and nid in self.endpoint_config and neighbor in self.endpoint_config:
                 if nid not in self.neighbor_health:
                     self.neighbor_health[nid] = {}
                 self.neighbor_health[nid][neighbor] = "DOWN"
-                
-            # Purge routing entries involving this down neighbor
-            had_route_via_neighbor = (neighbor in self.active_route)
-            if neighbor in self._routing_entries:
-                self._routing_entries[neighbor].clear()
-            for n, d_map in self._routing_entries.items():
-                to_del = [d for d, nh in d_map.items() if nh == neighbor]
-                if to_del:
-                    had_route_via_neighbor = True
-                for d in to_del:
-                    del d_map[d]
+                if neighbor not in self.processes:
+                    self.node_status[neighbor] = False
 
-            if had_route_via_neighbor:
-                self.active_route.clear()
-                if self._route_recovery_start is None:
-                    self._route_recovery_start = time.time()
-                
+                # Purge routing entries involving this down neighbor
+                had_route_via_neighbor = (neighbor in self.active_route)
+                if neighbor in self._routing_entries:
+                    self._routing_entries[neighbor].clear()
+                for n, d_map in self._routing_entries.items():
+                    to_del = [d for d, nh in d_map.items() if nh == neighbor]
+                    if to_del:
+                        had_route_via_neighbor = True
+                    for d in to_del:
+                        del d_map[d]
+
+                if had_route_via_neighbor:
+                    self.active_route.clear()
+                    if self._route_recovery_start is None:
+                        self._route_recovery_start = time.time()
+
         elif event_type == "NEIGHBOR_RECOVERED":
             nid = data.get("node_id")
             neighbor = data.get("neighbor_id")
-            if nid and neighbor:
+            if nid and neighbor and nid in self.endpoint_config and neighbor in self.endpoint_config:
                 if nid not in self.neighbor_health:
                     self.neighbor_health[nid] = {}
                 self.neighbor_health[nid][neighbor] = "UP"
-                
+                if neighbor not in self.processes:
+                    self.node_status[neighbor] = True
+
+        elif event_type in ("NODE_STARTED", "NODE_READY"):
+            nid = data.get("node_id")
+            if nid and nid in self.endpoint_config and nid not in self.processes:
+                self.node_status[nid] = True
+
+        elif event_type == "NODE_STOPPED":
+            nid = data.get("node_id")
+            if nid and nid in self.endpoint_config and nid not in self.processes:
+                self.node_status[nid] = False
+
         elif event_type == "SOS_DELIVERED":
             msg_id = data.get("message_id")
             if not msg_id or not any(x.get("message_id") == msg_id for x in self.hospital_inbox):
                 self.hospital_inbox.append(data)
-            
+
         elif event_type == "DATA_FORWARDED":
             pass  # Animation event, does not alter routing state
+
+        elif event_type in ("SOS_SENT", "ACK_RECEIVED", "ACK_TIMEOUT", "ACK_RECEIVED_LATE"):
+            msg_id = data.get("message_id")
+            if msg_id:
+                status_val = "PENDING"
+                if event_type == "ACK_RECEIVED":
+                    status_val = "CONFIRMED"
+                elif event_type == "ACK_RECEIVED_LATE":
+                    status_val = "LATE_CONFIRMED"
+                elif event_type == "ACK_TIMEOUT":
+                    status_val = "TIMEOUT"
+                self._sos_status[msg_id] = {
+                    "status": status_val,
+                    "event_data": data
+                }
 
         # Attach authoritative active route to route-related events
         if event_type in ("ROUTE_DISCOVERY_COMPLETED", "FORWARD_ROUTE_INSTALLED", "ROUTE_INVALIDATED", "NEIGHBOR_DOWN"):
@@ -428,7 +499,7 @@ class RealNetworkRuntime:
         """Sends command to the source node's control port to dispatch a DATA packet."""
         if source_id not in self.control_ports:
             return {"success": False, "detail": f"Unknown source node {source_id}"}
-            
+
         ctrl_port = self.control_ports[source_id]
         cmd = {
             "command": "SEND_DATA",
@@ -448,7 +519,7 @@ class RealNetworkRuntime:
         src_id = sos_request.get("source_id", "A")
         if src_id not in self.control_ports:
             return {"success": False, "detail": f"Unknown source node {src_id}"}
-            
+
         ctrl_port = self.control_ports[src_id]
         cmd = {
             "command": "SEND_SOS",
@@ -466,7 +537,10 @@ class RealNetworkRuntime:
         """Exposes the real-network state for REST and WebSocket INITIAL_STATE."""
         nodes = []
         for nid, (host, port) in self.endpoint_config.items():
-            is_proc_alive = (nid in self.processes and self.processes[nid].poll() is None)
+            if nid in self.processes:
+                is_proc_alive = (self.processes[nid].poll() is None)
+            else:
+                is_proc_alive = self.node_status.get(nid, False)
             coords = NODE_COORDINATES.get(nid, (18.5200, 73.8580))
             nodes.append({
                 "node_id": nid,
@@ -477,18 +551,22 @@ class RealNetworkRuntime:
                 "latitude": coords[0],
                 "longitude": coords[1]
             })
-            
+
         links = []
         for n1, n2 in DEFAULT_LINKS:
             if n1 in self.endpoint_config and n2 in self.endpoint_config:
-                n1_alive = (n1 in self.processes and self.processes[n1].poll() is None)
-                n2_alive = (n2 in self.processes and self.processes[n2].poll() is None)
+                n1_alive = (self.processes[n1].poll() is None) if n1 in self.processes else self.node_status.get(n1, False)
+                n2_alive = (self.processes[n2].poll() is None) if n2 in self.processes else self.node_status.get(n2, False)
+                is_down_in_health = (
+                    self.neighbor_health.get(n1, {}).get(n2) == "DOWN" or
+                    self.neighbor_health.get(n2, {}).get(n1) == "DOWN"
+                )
                 links.append({
                     "node_a_id": n1,
                     "node_b_id": n2,
-                    "is_active": n1_alive and n2_alive
+                    "is_active": n1_alive and n2_alive and not is_down_in_health
                 })
-                
+
         return {
             "nodes": nodes,
             "links": links,
@@ -501,11 +579,11 @@ class RealNetworkRuntime:
         pdr = "0%"
         if self.metrics["packets_sent"] > 0:
             pdr = f"{(self.metrics['packets_delivered'] / self.metrics['packets_sent']) * 100:.1f}%"
-            
+
         loss = "0%"
         if self.metrics["packets_sent"] > 0:
             loss = f"{(self.metrics['packets_dropped'] / self.metrics['packets_sent']) * 100:.1f}%"
-            
+
         avg_hops = "0"
         if self.metrics["packets_delivered"] > 0:
             avg_hops = f"{(self.metrics['total_hop_count'] / self.metrics['packets_delivered']):.1f}"
@@ -531,3 +609,6 @@ class RealNetworkRuntime:
 
     def get_events(self) -> List[str]:
         return list(self.recent_events)
+
+    def get_sos_status(self, message_id: str) -> Optional[dict]:
+        return self._sos_status.get(message_id)

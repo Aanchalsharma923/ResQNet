@@ -13,18 +13,17 @@ from resqnet.backend.app.runtime.node import NodeRuntime
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+from resqnet.backend.app.config_loader import load_node_endpoints
+
 def run_single_node(node_id: str, config_path: str, bind_host: str, event_host: str = "127.0.0.1", event_port: Optional[int] = None, control_port: Optional[int] = None):
     """
     Runs a single ResQNet node in the current process.
     """
     try:
-        with open(config_path, "r") as f:
-            raw_config = json.load(f)
+        endpoint_config = load_node_endpoints(config_path)
     except Exception as e:
         logger.error(f"Failed to load configuration from {config_path}: {e}")
         sys.exit(1)
-        
-    endpoint_config = {k: (v["host"], v["port"]) for k, v in raw_config["nodes"].items()} if "nodes" in raw_config else {k: (v["host"], v["port"]) for k, v in raw_config.items()}
     
     if node_id not in endpoint_config:
         logger.error(f"Unknown node ID: {node_id}")
@@ -64,18 +63,22 @@ def run_single_node(node_id: str, config_path: str, bind_host: str, event_host: 
 
 def main():
     parser = argparse.ArgumentParser(description="ResQNet Node Launcher")
-    parser.add_argument("--node-id", type=str, required=True, help="Run a specific node ID (e.g. A).")
-    parser.add_argument("--config", type=str, required=True, help="Path to JSON configuration file.")
+    parser.add_argument("node_id_pos", nargs="?", default=None, help="Node ID (e.g. A, B, C, D, H).")
+    parser.add_argument("--node-id", type=str, default=None, help="Run a specific node ID (e.g. A).")
+    parser.add_argument("--config", type=str, default="configs/lan_nodes.json", help="Path to JSON configuration file.")
     parser.add_argument("--bind-host", type=str, default="0.0.0.0", help="Host address to bind the UDP socket to (default: 0.0.0.0).")
     parser.add_argument("--event-host", type=str, default="127.0.0.1", help="Host address for event bridge.")
     parser.add_argument("--event-port", type=int, default=None, help="UDP port for event bridge.")
     parser.add_argument("--control-port", type=int, default=None, help="Local UDP port for command control listener.")
     
     args = parser.parse_args()
+    node_id = args.node_id or args.node_id_pos
+    if not node_id:
+        parser.error("Node ID is required (e.g. python scripts/run_node.py H or --node-id H)")
     
     # Re-configure logger format to include node ID
-    logging.getLogger().handlers[0].setFormatter(logging.Formatter(f"%(asctime)s [{args.node_id}] %(message)s"))
-    run_single_node(args.node_id, args.config, args.bind_host, args.event_host, args.event_port, args.control_port)
+    logging.getLogger().handlers[0].setFormatter(logging.Formatter(f"%(asctime)s [{node_id}] %(message)s"))
+    run_single_node(node_id, args.config, args.bind_host, args.event_host, args.event_port, args.control_port)
 
 
 if __name__ == "__main__":

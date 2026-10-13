@@ -39,9 +39,11 @@ class SOSMessageRequest(BaseModel):
     source_id: str
     destination_id: str
     message: str
-    latitude: float
-    longitude: float
-    priority: str
+    latitude: Optional[float] = 18.5204
+    longitude: Optional[float] = 73.8567
+    priority: Optional[str] = "HIGH"
+    message_id: Optional[str] = None
+    timeout_seconds: Optional[float] = 5.0
 
 
 class RouteHistoryItem(BaseModel):
@@ -62,6 +64,8 @@ class MessageSendResponse(BaseModel):
     success: bool
     events: List[str]
     packet: Optional[PacketResponse]
+    message_id: Optional[str] = None
+    ack_status: Optional[str] = None
 
 class MetricsResponse(BaseModel):
     packets_sent: int

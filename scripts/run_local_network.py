@@ -9,6 +9,7 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from resqnet.backend.app.runtime.node import NodeRuntime
+from resqnet.backend.app.config_loader import load_node_endpoints
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ def run_single_node(node_id: str, config: dict):
     """
     logger.info(f"[{node_id}] Initializing node...")
     runtime = NodeRuntime(node_id, config)
-    
+
     def handle_shutdown(signum, frame):
         logger.info(f"[{node_id}] Shutdown signal received.")
         runtime.stop()
@@ -38,7 +39,7 @@ def run_single_node(node_id: str, config: dict):
     if sys.platform != "win32":
         signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
-    
+
     try:
         runtime.start()
         logger.info(f"[{node_id}] RUNNING on {config[node_id][0]}:{config[node_id][1]}")
@@ -50,28 +51,26 @@ def run_single_node(node_id: str, config: dict):
         runtime.stop()
         sys.exit(1)
 
-def launch_all_nodes(config: dict):
+def launch_all_nodes(config: dict, config_path_arg: str = None):
     """
     Spawns child processes for all nodes defined in the config.
     """
     logger.info("Starting ResQNet Launcher...")
     processes = []
-    
-    # Write temp config file to pass to children if needed, or pass via command line.
-    # Since DEFAULT_ENDPOINTS is known, we can just pass the node_id.
-    
-    # Path to this script
+
     script_path = os.path.abspath(__file__)
-    
+
     try:
         for node_id, (ip, port) in config.items():
             logger.info(f"Launching process for Node {node_id}")
             cmd = [sys.executable, script_path, "--node-id", node_id]
+            if config_path_arg:
+                cmd.extend(["--config", config_path_arg])
             p = subprocess.Popen(cmd)
             processes.append((node_id, p))
-            
+
         logger.info("All nodes launched. Press Ctrl+C to terminate.")
-        
+
         # Monitor processes
         while True:
             time.sleep(1)
@@ -80,11 +79,11 @@ def launch_all_nodes(config: dict):
                     logger.warning(f"Process for Node {node_id} exited with code {p.returncode}")
                     # Remove from list so we don't spam
                     processes.remove((node_id, p))
-                    
+
             if not processes:
                 logger.info("All child processes have exited.")
                 break
-                
+
     except KeyboardInterrupt:
         logger.info("Launcher received KeyboardInterrupt. Stopping all nodes...")
     finally:
@@ -102,18 +101,27 @@ def launch_all_nodes(config: dict):
 def main():
     parser = argparse.ArgumentParser(description="ResQNet Multi-Process Launcher")
     parser.add_argument("--node-id", type=str, help="Run a specific node ID (e.g. A). If not specified, launches all nodes.")
-    
+    parser.add_argument("--config", type=str, default=None, help="Path to JSON configuration file (optional).")
+
     args = parser.parse_args()
-    
+
+    endpoints = DEFAULT_ENDPOINTS
+    if args.config:
+        try:
+            endpoints = load_node_endpoints(args.config)
+        except Exception as e:
+            logger.error(f"Failed to load config from {args.config}: {e}")
+            sys.exit(1)
+
     if args.node_id:
-        if args.node_id not in DEFAULT_ENDPOINTS:
+        if args.node_id not in endpoints:
             logger.error(f"Unknown node ID: {args.node_id}")
             sys.exit(1)
         # Re-configure logger format to include node ID
         logging.getLogger().handlers[0].setFormatter(logging.Formatter(f"%(asctime)s [{args.node_id}] %(message)s"))
-        run_single_node(args.node_id, DEFAULT_ENDPOINTS)
+        run_single_node(args.node_id, endpoints)
     else:
-        launch_all_nodes(DEFAULT_ENDPOINTS)
+        launch_all_nodes(endpoints, args.config)
 
 if __name__ == "__main__":
     main()
