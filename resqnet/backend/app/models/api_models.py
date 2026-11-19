@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
 
 class NodeResponse(BaseModel):
@@ -78,8 +78,8 @@ class PacketResponse(BaseModel):
 
 class MessageSendResponse(BaseModel):
     success: bool
-    events: List[str]
-    packet: Optional[PacketResponse]
+    events: List[str] = Field(default_factory=list)
+    packet: Optional[PacketResponse] = None
     message_id: Optional[str] = None
     ack_status: Optional[str] = None
     status: Optional[str] = "success"
@@ -87,6 +87,8 @@ class MessageSendResponse(BaseModel):
     confirmed_at: Optional[float] = None
     active_route: Optional[List[str]] = None
     error: Optional[str] = None
+    source: Optional[str] = None
+    destination: Optional[str] = None
 
 class MetricsResponse(BaseModel):
     packets_sent: int
