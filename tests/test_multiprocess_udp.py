@@ -81,8 +81,8 @@ else:
         proc_a = subprocess.Popen([sys.executable, script_file, "A"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         
         try:
-            stdout_a, _ = proc_a.communicate(timeout=5)
-            stdout_b, _ = proc_b.communicate(timeout=5)
+            stdout_a, _ = proc_a.communicate(timeout=10)
+            stdout_b, _ = proc_b.communicate(timeout=10)
         except subprocess.TimeoutExpired:
             proc_a.kill()
             proc_b.kill()

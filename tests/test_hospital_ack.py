@@ -417,7 +417,11 @@ def test_real_udp_node_runtime_ack_lifecycle():
             "timeout_seconds": 0.15
         })
         assert node_a._pending_acks[timeout_msg_id]["status"] == "PENDING"
-        time.sleep(0.3)
+        timeout_deadline = time.time() + 1.0
+        while time.time() < timeout_deadline:
+            if node_a._pending_acks[timeout_msg_id]["status"] == "TIMEOUT":
+                break
+            time.sleep(0.05)
         assert node_a._pending_acks[timeout_msg_id]["status"] == "TIMEOUT"
 
         # 6. Delayed ACK transitions TIMEOUT to LATE_CONFIRMED

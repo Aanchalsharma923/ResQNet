@@ -133,7 +133,7 @@ const TopologyView = ({ networkState, events }: TopologyViewProps) => {
           if (!posA || !posB) return null;
 
           const key = [link.node_a_id, link.node_b_id].sort().join('-');
-          const isActiveRoute = isActiveRouteLink(link.node_a_id, link.node_b_id);
+          const isActiveRoute = link.is_active && isActiveRouteLink(link.node_a_id, link.node_b_id);
 
           return (
             <line

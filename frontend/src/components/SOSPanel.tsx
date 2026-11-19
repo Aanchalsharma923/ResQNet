@@ -13,28 +13,58 @@ const SOSPanel = ({ networkState, events = [] }: SOSPanelProps) => {
   const [priority, setPriority] = useState('CRITICAL');
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [hospitalReplies, setHospitalReplies] = useState<Array<{ sos_message_id?: string; message: string; timestamp: string; hospital_id: string }>>([]);
 
-  // Listen for live ACK events
+  // Listen for live ACK and Hospital Response events
   useEffect(() => {
     if (events.length > 0) {
-      const latest = events[0];
-      if (latest.type === 'ACK_RECEIVED') {
-        const d = latest.data || {};
+      if (events.some(e => e.type === 'SIMULATION_RESET')) {
+        setFeedback(null);
+        setHospitalReplies([]);
+        return;
+      }
+
+      // Check for incoming hospital triage reply
+      const replyEvts = events.filter(e => e.type === 'HOSPITAL_RESPONSE_DELIVERED' && e.data?.message);
+      if (replyEvts.length > 0) {
+        setHospitalReplies(prev => {
+          const existing = new Set(prev.map(r => `${r.sos_message_id}-${r.message}`));
+          const toAdd = replyEvts
+            .map(e => ({
+              sos_message_id: e.data.sos_message_id,
+              message: e.data.message,
+              timestamp: e.data.timestamp || new Date().toISOString(),
+              hospital_id: e.data.hospital_id || 'H'
+            }))
+            .filter(r => !existing.has(`${r.sos_message_id}-${r.message}`));
+          return toAdd.length > 0 ? [...toAdd, ...prev] : prev;
+        });
+      }
+
+      const ackEvt = events.find(e => e.type === 'ACK_RECEIVED');
+      if (ackEvt) {
+        const d = ackEvt.data || {};
         setFeedback({
           type: 'success',
           text: `✓ Hospital Return ACK Verified! RTT: ${d.rtt_ms ?? 0}ms. Full bidirectional path confirmed.`
         });
-      } else if (latest.type === 'ACK_TIMEOUT') {
-        setFeedback({
-          type: 'error',
-          text: '⚠️ Hospital Return ACK timed out after configured deadline.'
-        });
-      } else if (latest.type === 'ACK_RECEIVED_LATE') {
-        const d = latest.data || {};
-        setFeedback({
-          type: 'info',
-          text: `ℹ️ Delayed Hospital Return ACK received and confirmed late (RTT: ${d.rtt_ms ?? 0}ms).`
-        });
+      } else {
+        const timeoutEvt = events.find(e => e.type === 'ACK_TIMEOUT');
+        if (timeoutEvt) {
+          setFeedback({
+            type: 'error',
+            text: '⚠️ Hospital Return ACK timed out after configured deadline.'
+          });
+        } else {
+          const lateEvt = events.find(e => e.type === 'ACK_RECEIVED_LATE');
+          if (lateEvt) {
+            const d = lateEvt.data || {};
+            setFeedback({
+              type: 'info',
+              text: `ℹ️ Delayed Hospital Return ACK received and confirmed late (RTT: ${d.rtt_ms ?? 0}ms).`
+            });
+          }
+        }
       }
     }
   }, [events]);
@@ -63,18 +93,31 @@ const SOSPanel = ({ networkState, events = [] }: SOSPanelProps) => {
         message,
         latitude: selectedNode.latitude,
         longitude: selectedNode.longitude,
-        priority
+        priority,
+        auto_discover: true
       });
 
-      if (res && (res.success || res.status === 'success' || !res.error)) {
-        setFeedback({
-          type: 'success',
-          text: `SOS dispatched from Node ${source} to Hospital H. AODV discovering route.`
-        });
+      if (res && (res.success || res.status === 'success')) {
+        if (res.ack_status === 'CONFIRMED') {
+          setFeedback({
+            type: 'success',
+            text: `✓ SOS delivered to Hospital-H & Hospital Return ACK Verified! RTT: ${res.rtt_ms ?? 0}ms. Full bidirectional path confirmed.`
+          });
+        } else if (res.ack_status === 'TIMEOUT') {
+          setFeedback({
+            type: 'error',
+            text: `⚠️ SOS delivered to Hospital-H, but Hospital Return ACK timed out after configured deadline.`
+          });
+        } else {
+          setFeedback({
+            type: 'success',
+            text: `✓ SOS dispatched and delivered to Hospital-H over AODV path! Awaiting ACK confirmation.`
+          });
+        }
       } else {
         setFeedback({
           type: 'error',
-          text: res?.error || 'Failed to dispatch SOS signal.'
+          text: res?.error || res?.detail || 'Failed to dispatch SOS signal.'
         });
       }
     } catch (err: any) {
@@ -160,6 +203,30 @@ const SOSPanel = ({ networkState, events = [] }: SOSPanelProps) => {
           style={{ color: '#94a3b8', fontSize: '0.8rem', background: '#0a0f1d' }}
         />
       </div>
+
+      {hospitalReplies.length > 0 && (
+        <div style={{
+          marginTop: '6px',
+          marginBottom: '10px',
+          padding: '8px 10px',
+          borderRadius: '4px',
+          background: 'rgba(52, 211, 153, 0.12)',
+          border: '1px solid rgba(52, 211, 153, 0.35)',
+        }}>
+          <div style={{ fontSize: '0.74rem', fontWeight: 600, color: '#34d399', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span>🏥</span> Hospital Triage Instructions Received
+          </div>
+          {hospitalReplies.map((reply, idx) => (
+            <div key={idx} style={{ fontSize: '0.76rem', color: '#e2e8f0', marginBottom: '6px', borderLeft: '2px solid #34d399', paddingLeft: '6px' }}>
+              <div style={{ fontStyle: 'italic', color: '#f1f5f9' }}>"{reply.message}"</div>
+              <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '2px' }}>
+                From: Hospital-{reply.hospital_id} • {new Date(reply.timestamp).toLocaleTimeString()}
+                {reply.sos_message_id && ` • Ref: ${reply.sos_message_id.slice(0, 8)}...`}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {feedback && (
         <div style={{

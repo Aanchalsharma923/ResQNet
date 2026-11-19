@@ -1,32 +1,94 @@
+import { useState } from 'react';
 import {
   failNode, recoverNode, failLink, recoverLink, resetSimulation, sendMessage,
-  setRuntimeMode, startRealRuntime, stopRealRuntime
+  setRuntimeMode, startRealRuntime, stopRealRuntime,
+  getAdminKey, setAdminKey
 } from '../services/api';
 import type { NetworkState, RuntimeMode } from '../types';
 
 interface ControlsPanelProps {
   networkState: NetworkState | null;
   onModeChange?: (mode: RuntimeMode) => void;
+  onNetworkUpdate?: () => void;
 }
 
-const ControlsPanel = ({ networkState, onModeChange }: ControlsPanelProps) => {
+const ControlsPanel = ({ networkState, onModeChange, onNetworkUpdate }: ControlsPanelProps) => {
   const isRealMode = networkState?.mode === 'real';
+  const [adminKeyVal, setAdminKeyVal] = useState<string>(getAdminKey());
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const clearErrorAfterDelay = () => {
+    setTimeout(() => setActionError(null), 5000);
+  };
 
   const handleSwitchMode = async (mode: RuntimeMode) => {
     try {
+      setActionError(null);
       await setRuntimeMode(mode);
       if (onModeChange) {
         onModeChange(mode);
       }
-    } catch (e) {
-      console.error('Failed to change mode', e);
+      onNetworkUpdate?.();
+    } catch (e: any) {
+      setActionError(e?.message || 'Failed to change mode');
+      clearErrorAfterDelay();
     }
   };
 
-  const handleFailNode = async (nodeId: string) => await failNode(nodeId);
-  const handleRecoverNode = async (nodeId: string) => await recoverNode(nodeId);
-  const handleFailLink = async (a: string, b: string) => await failLink(a, b);
-  const handleRecoverLink = async (a: string, b: string) => await recoverLink(a, b);
+  const handleFailNode = async (nodeId: string) => {
+    try {
+      setActionError(null);
+      await failNode(nodeId);
+      onNetworkUpdate?.();
+    } catch (e: any) {
+      setActionError(e?.message || `Failed to fail node ${nodeId}`);
+      clearErrorAfterDelay();
+    }
+  };
+
+  const handleRecoverNode = async (nodeId: string) => {
+    try {
+      setActionError(null);
+      await recoverNode(nodeId);
+      onNetworkUpdate?.();
+    } catch (e: any) {
+      setActionError(e?.message || `Failed to recover node ${nodeId}`);
+      clearErrorAfterDelay();
+    }
+  };
+
+  const handleFailLink = async (a: string, b: string) => {
+    try {
+      setActionError(null);
+      await failLink(a, b);
+      onNetworkUpdate?.();
+    } catch (e: any) {
+      setActionError(e?.message || `Failed to sever link ${a}-${b}`);
+      clearErrorAfterDelay();
+    }
+  };
+
+  const handleRecoverLink = async (a: string, b: string) => {
+    try {
+      setActionError(null);
+      await recoverLink(a, b);
+      onNetworkUpdate?.();
+    } catch (e: any) {
+      setActionError(e?.message || `Failed to restore link ${a}-${b}`);
+      clearErrorAfterDelay();
+    }
+  };
+
+  const handleReset = async () => {
+    try {
+      setActionError(null);
+      await resetSimulation();
+      onNetworkUpdate?.();
+    } catch (e: any) {
+      setActionError(e?.message || 'Failed to reset simulation');
+      clearErrorAfterDelay();
+    }
+  };
 
   const getNodeRole = (id: string) => {
     if (id === 'A') return 'Rescue-A';
@@ -81,7 +143,7 @@ const ControlsPanel = ({ networkState, onModeChange }: ControlsPanelProps) => {
             <button type="button" className="danger" onClick={() => stopRealRuntime()} style={{ fontSize: '0.78rem' }}>
               Stop All Nodes
             </button>
-            <button type="button" onClick={() => resetSimulation()} style={{ fontSize: '0.78rem' }}>
+            <button type="button" onClick={handleReset} style={{ fontSize: '0.78rem' }}>
               Reset Runtime
             </button>
             <button type="button" className="primary" onClick={() => sendMessage('A', 'H', 'Real UDP Ping')} style={{ fontSize: '0.78rem' }}>
@@ -127,7 +189,7 @@ const ControlsPanel = ({ networkState, onModeChange }: ControlsPanelProps) => {
       ) : (
         <>
           <div className="controls-grid">
-            <button type="button" className="primary" onClick={() => resetSimulation()} style={{ fontSize: '0.78rem' }}>
+            <button type="button" className="primary" onClick={handleReset} style={{ fontSize: '0.78rem' }}>
               Reset Simulation
             </button>
             <button type="button" className="primary" onClick={() => sendMessage('A', 'H', 'Simulation Start')} style={{ fontSize: '0.78rem' }}>
@@ -197,6 +259,43 @@ const ControlsPanel = ({ networkState, onModeChange }: ControlsPanelProps) => {
           )}
         </>
       )}
+
+      {actionError && (
+        <div style={{ marginTop: '12px', padding: '8px 10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '6px', color: '#ef4444', fontSize: '0.75rem', lineHeight: '1.4' }}>
+          ⚠️ {actionError}
+        </div>
+      )}
+
+      {/* Admin Authorization Key */}
+      <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <span style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
+            Admin Key
+          </span>
+          <span style={{ fontSize: '0.68rem', color: '#64748b' }}>
+            Required in secure production
+          </span>
+        </div>
+        <input
+          type="password"
+          placeholder="Enter RESQNET_ADMIN_KEY if enabled"
+          value={adminKeyVal}
+          onChange={(e) => {
+            setAdminKeyVal(e.target.value);
+            setAdminKey(e.target.value);
+          }}
+          style={{
+            width: '100%',
+            padding: '5px 8px',
+            fontSize: '0.75rem',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '4px',
+            color: 'var(--text-main)',
+            boxSizing: 'border-box'
+          }}
+        />
+      </div>
     </div>
   );
 };

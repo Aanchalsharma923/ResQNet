@@ -7,9 +7,12 @@ from resqnet.backend.app.config_loader import expand_env_vars, load_node_endpoin
 from resqnet.backend.app.runtime.real_network_runtime import RealNetworkRuntime
 
 def get_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.bind(('', 0))
-        return s.getsockname()[1]
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind(('', 0))
+            p = s.getsockname()[1]
+            if p < 60000:
+                return p
 
 def test_expand_env_vars():
     # Test fallback when unset
@@ -235,12 +238,17 @@ def test_two_laptop_cross_process_end_to_end(tmp_path):
     proc_h = subprocess.Popen(cmd_h)
 
     try:
-        # Give nodes 2.5 seconds to start and exchange HELLO beacons
-        time.sleep(2.5)
+        # Give nodes time to start, register readiness, and exchange HELLO beacons
+        deadline = time.time() + 10.0
+        active_ids = []
+        while time.time() < deadline:
+            state = runtime.get_network_state()
+            active_ids = [n["node_id"] for n in state["nodes"] if n["is_active"]]
+            if "A" in active_ids and "C" in active_ids and "H" in active_ids:
+                break
+            time.sleep(0.2)
 
         # Verify all nodes are recognized as active
-        state = runtime.get_network_state()
-        active_ids = [n["node_id"] for n in state["nodes"] if n["is_active"]]
         assert "A" in active_ids
         assert "C" in active_ids
         assert "H" in active_ids
@@ -260,12 +268,20 @@ def test_two_laptop_cross_process_end_to_end(tmp_path):
         assert res.get("success") is True
 
         # Wait for AODV route discovery and forward traversal
-        time.sleep(2.0)
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            if runtime.get_hospital_inbox():
+                break
+            time.sleep(0.2)
 
         # If needed, send second confirmed packet along established route
         if not runtime.get_hospital_inbox():
             runtime.send_sos(sos_req)
-            time.sleep(2.0)
+            deadline = time.time() + 4.0
+            while time.time() < deadline:
+                if runtime.get_hospital_inbox():
+                    break
+                time.sleep(0.2)
 
         # 4. Verify Hospital-H on Laptop 2 received the SOS
         inbox = runtime.get_hospital_inbox()
@@ -273,7 +289,13 @@ def test_two_laptop_cross_process_end_to_end(tmp_path):
         assert any(item.get("message_id") == "sos-cross-device-001" for item in inbox)
 
         # 5. Verify Rescue-A received and validated the return ACK from Hospital-H
-        status_rec = runtime.get_sos_status("sos-cross-device-001")
+        deadline = time.time() + 5.0
+        status_rec = None
+        while time.time() < deadline:
+            status_rec = runtime.get_sos_status("sos-cross-device-001")
+            if status_rec and status_rec.get("status") in ("CONFIRMED", "LATE_CONFIRMED"):
+                break
+            time.sleep(0.2)
         assert status_rec is not None
         assert status_rec.get("status") in ("CONFIRMED", "LATE_CONFIRMED")
 

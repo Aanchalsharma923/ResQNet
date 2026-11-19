@@ -341,14 +341,20 @@ def test_node_runtime_emits_data_dropped_on_no_route():
     """
     Phase 5.3: NodeRuntime must emit DATA_DROPPED when a DATA packet has no route.
     """
+    import socket
     from resqnet.backend.app.runtime.node import NodeRuntime
     events = []
     def record_event(etype, data):
         events.append((etype, data))
 
+    def get_port():
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind(('', 0))
+            return s.getsockname()[1]
+
     endpoint_config = {
-        "A": ("127.0.0.1", 52010),
-        "H": ("127.0.0.1", 52014)
+        "A": ("127.0.0.1", get_port()),
+        "H": ("127.0.0.1", get_port())
     }
     # No links connected between A and H
     runtime = NodeRuntime("A", endpoint_config, topology_links=[], event_callback=record_event)

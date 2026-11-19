@@ -1,0 +1,60 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: resqnet-backend
+    restart: unless-stopped
+    environment:
+      - RESQNET_PRODUCTION=${RESQNET_PRODUCTION:-false}
+      - RESQNET_MODE=${RESQNET_MODE:-real}
+      - RESQNET_CONFIG=${RESQNET_CONFIG:-configs/localhost_nodes.json}
+      - RESQNET_HOST=0.0.0.0
+      - RESQNET_PORT=8000
+      - RESQNET_EVENT_BIND_HOST=0.0.0.0
+      - RESQNET_CORS_ORIGINS=${RESQNET_CORS_ORIGINS:-http://localhost,http://127.0.0.1}
+      - RESQNET_ADMIN_KEY=${RESQNET_ADMIN_KEY:-}
+      - RESQNET_HOSPITAL_KEY=${RESQNET_HOSPITAL_KEY:-}
+      - RESQNET_STRICT_WS_ORIGIN=${RESQNET_STRICT_WS_ORIGIN:-false}
+      - RESQNET_RATE_LIMIT_SOS_PER_MIN=${RESQNET_RATE_LIMIT_SOS_PER_MIN:-60}
+    # Bound to 127.0.0.1 loopback on host for local administrative inspection or SSH tunneling.
+    # Mesh UDP ports (50010-50014) and Event Bridge (50099) communicate inside the private bridge network.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - resqnet-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resqnet-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    # To enable direct containerized TLS, uncomment volumes below:
+    # volumes:
+    #   - ./certs:/etc/nginx/certs:ro
+    #   - ./frontend/nginx.ssl.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - resqnet-net
+
+networks:
+  resqnet-net:
+    driver: bridge

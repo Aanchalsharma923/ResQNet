@@ -103,6 +103,8 @@ class RealNetworkRuntime:
             if not nxt or nxt in visited:
                 break
 
+
+
             # Verify that curr and nxt are valid configured neighbors
             is_valid_neighbor = any(
                 (link[0] == curr and link[1] == nxt) or (link[1] == curr and link[0] == nxt)
@@ -233,7 +235,7 @@ class RealNetworkRuntime:
             script_path,
             "--node-id", node_id,
             "--config", self.config_path,
-            "--event-host", "127.0.0.1",
+            "--event-host", os.environ.get("RESQNET_EVENT_HOST", "127.0.0.1"),
             "--event-port", str(self.event_port),
             "--control-port", str(ctrl_port)
         ]
@@ -473,6 +475,11 @@ class RealNetworkRuntime:
         elif event_type == "DATA_FORWARDED":
             pass  # Animation event, does not alter routing state
 
+        elif event_type == "HOSPITAL_RESPONSE_DELIVERED":
+            msg_id = data.get("sos_message_id")
+            if msg_id and msg_id in self._sos_status:
+                self._sos_status[msg_id]["hospital_response"] = data
+
         elif event_type in ("SOS_SENT", "ACK_RECEIVED", "ACK_TIMEOUT", "ACK_RECEIVED_LATE"):
             msg_id = data.get("message_id")
             if msg_id:
@@ -612,3 +619,32 @@ class RealNetworkRuntime:
 
     def get_sos_status(self, message_id: str) -> Optional[dict]:
         return self._sos_status.get(message_id)
+
+    def reset(self):
+        """Resets the real network runtime state, inboxes, metrics, and active routes."""
+        self.hospital_inbox.clear()
+        self.recent_events.clear()
+        self.active_route.clear()
+        self._routing_entries.clear()
+        self._sos_status.clear()
+        self._packet_send_times.clear()
+        self._delivered_latencies.clear()
+        self._delivered_bytes = 0
+        self._total_transit_time = 0.0
+        self._route_discovery_start = None
+        self._route_recovery_start = None
+        self.metrics = {
+            "packets_sent": 0,
+            "packets_delivered": 0,
+            "packets_dropped": 0,
+            "total_hop_count": 0,
+            "rreq_count": 0,
+            "rrep_count": 0,
+            "rerr_count": 0,
+            "route_discovery_time": "N/A",
+            "recovery_time": "N/A",
+            "latency": "N/A",
+            "throughput": "N/A"
+        }
+        broadcaster.broadcast_sync("SIMULATION_RESET", self.get_network_state())
+        logger.info("[RealNetworkRuntime] Runtime reset completed.")

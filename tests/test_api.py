@@ -6,7 +6,10 @@ client = TestClient(app)
 def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "ResQNet"}
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["service"] == "ResQNet"
+    assert "runtime_mode" in data
 
 def test_get_network():
     response = client.get("/api/network")

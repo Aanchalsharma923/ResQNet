@@ -37,5 +37,8 @@ describe('App', () => {
     expect(screen.getByTestId('mock-event-log')).toBeInTheDocument();
     // SOSPanel and HospitalPanel might also conditionally render or be inside panel-row
     expect(screen.getByTestId('mock-hospital-panel')).toBeInTheDocument();
+
+    // Verify stale telemetry warning banner appears when disconnected
+    expect(screen.getByText(/Live Telemetry Paused/i)).toBeInTheDocument();
   });
 });

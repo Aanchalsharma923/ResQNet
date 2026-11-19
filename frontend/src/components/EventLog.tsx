@@ -12,6 +12,14 @@ interface Narrative {
   category: 'success' | 'alert' | 'warning' | 'info';
 }
 
+const formatNodeName = (nodeId?: string): string => {
+  if (!nodeId) return 'Node';
+  if (nodeId === 'A') return 'Rescue-A';
+  if (nodeId === 'H') return 'Hospital-H';
+  if (['B', 'C', 'D'].includes(nodeId)) return `Relay-${nodeId}`;
+  return `Node-${nodeId}`;
+};
+
 const getEventNarrative = (evt: WSEvent): Narrative => {
   const t = evt.type;
   const d = evt.data || {};
@@ -25,47 +33,54 @@ const getEventNarrative = (evt: WSEvent): Narrative => {
   }
 
   if (t === 'RREQ_GENERATED' || t === 'RREQ_CREATED') {
-    const src = d.node_id || d.source_id || 'A';
-    const dest = d.destination_id || 'H';
+    const src = formatNodeName(d.node_id || d.source_id || 'A');
+    const dest = formatNodeName(d.destination_id || 'H');
     return {
       title: 'AODV Route Request Initiated',
-      desc: `Rescue-${src} is flooding RREQ to discover a path to Hospital-${dest}.`,
+      desc: `${src} is flooding RREQ to discover a path to ${dest}.`,
       category: 'warning'
     };
   }
   if (t === 'RREP_GENERATED') {
     return {
       title: 'Route Reply (RREP) Emitted',
-      desc: `Hospital-${d.node_id || 'H'} accepted route request; unicasting RREP back to source.`,
+      desc: `${formatNodeName(d.node_id || 'H')} accepted route request; unicasting RREP back to source.`,
       category: 'success'
     };
   }
   if (t === 'ROUTE_DISCOVERY_COMPLETED' || t === 'FORWARD_ROUTE_INSTALLED') {
-    const next = d.next_hop || d.next || 'relay';
+    const next = formatNodeName(d.next_hop || d.next);
     return {
       title: 'AODV Path Established',
-      desc: `Node ${d.node_id || 'A'} installed forward route to destination via Relay-${next}.`,
+      desc: `${formatNodeName(d.node_id || 'A')} installed forward route to destination via ${next}.`,
       category: 'success'
     };
   }
   if (t === 'NODE_FAILED') {
     return {
-      title: 'Relay Failure Detected',
-      desc: `Relay-${d.node_id} is down/unreachable.`,
+      title: 'Node Failure Detected',
+      desc: `${formatNodeName(d.node_id)} is down/unreachable.`,
       category: 'alert'
+    };
+  }
+  if (t === 'NODE_RECOVERED') {
+    return {
+      title: 'Node Recovery Detected',
+      desc: `${formatNodeName(d.node_id)} is restored and active.`,
+      category: 'success'
     };
   }
   if (t === 'NEIGHBOR_DOWN') {
     return {
       title: 'Neighbor Timeout Detected',
-      desc: `Node ${d.node_id} detected loss of HELLO beacons from Relay-${d.neighbor_id}.`,
+      desc: `${formatNodeName(d.node_id)} detected loss of HELLO beacons from ${formatNodeName(d.neighbor_id)}.`,
       category: 'alert'
     };
   }
   if (t === 'ROUTE_INVALIDATED') {
     return {
       title: 'Active Route Invalidated',
-      desc: `Route to ${d.dest || d.destination || 'destination'} marked invalid due to severed link.`,
+      desc: `Route to ${formatNodeName(d.dest || d.destination)} marked invalid due to severed link.`,
       category: 'alert'
     };
   }
@@ -79,70 +94,77 @@ const getEventNarrative = (evt: WSEvent): Narrative => {
   if (t === 'SOS_SENT' || t === 'DATA_CREATED') {
     return {
       title: 'Emergency SOS Dispatched',
-      desc: `Rescue-${d.source_id || 'A'} transmitted high-priority emergency payload.`,
+      desc: `${formatNodeName(d.source_id || 'A')} transmitted high-priority emergency payload.`,
       category: 'info'
     };
   }
   if (t === 'DATA_FORWARDED') {
     return {
       title: 'Data Forwarded Along Path',
-      desc: `Forwarded: ${d.from_node || d.node_id} → ${d.to_node || 'next hop'}.`,
+      desc: `Forwarded: ${formatNodeName(d.from_node || d.node_id)} → ${formatNodeName(d.to_node || 'next hop')}.`,
       category: 'info'
     };
   }
   if (t === 'SOS_DELIVERED' || t === 'DATA_DELIVERED') {
     return {
       title: 'SOS Delivered at Hospital',
-      desc: `Hospital-H validated and delivered packet to hospital application inbox.`,
+      desc: `${formatNodeName(d.destination_id || 'H')} validated and delivered packet to hospital application inbox.`,
       category: 'success'
     };
   }
-  if (t === 'DATA_DROPPED') {
+  if (t === 'DATA_DROPPED' || t === 'PACKET_DROPPED') {
     return {
-      title: 'Packet Dropped',
+      title: 'Data Packet Dropped',
       desc: `Discarded: ${d.reason || 'No route available'}.`,
       category: 'alert'
+    };
+  }
+  if (t === 'RREQ_CONSUMED' || t === 'RERR_CONSUMED') {
+    return {
+      title: 'AODV Control Broadcast Terminated',
+      desc: `Leaf or redundant AODV control flood packet consumed at ${formatNodeName(d.current_node || d.node_id)}.`,
+      category: 'info'
     };
   }
   if (t === 'ACK_SENT') {
     return {
       title: 'Hospital Return ACK Dispatched',
-      desc: `Hospital-H generated return ACK DATA packet addressed to Rescue-${d.destination_id || 'A'}.`,
+      desc: `${formatNodeName(d.source_id || 'H')} generated return ACK DATA packet addressed to ${formatNodeName(d.destination_id || 'A')}.`,
       category: 'info'
     };
   }
   if (t === 'ACK_RECEIVED') {
     return {
       title: 'Hospital ACK Verified at Rescue Unit',
-      desc: `Rescue-${d.source_id || 'A'} verified authentic return ACK from Hospital-${d.hospital_id || 'H'} (RTT: ${d.rtt_ms || '0'}ms). Bidirectional delivery confirmed!`,
+      desc: `${formatNodeName(d.source_id || 'A')} verified authentic return ACK from ${formatNodeName(d.hospital_id || 'H')} (RTT: ${d.rtt_ms || '0'}ms). Bidirectional delivery confirmed!`,
       category: 'success'
     };
   }
   if (t === 'ACK_TIMEOUT') {
     return {
       title: 'Hospital ACK Timeout',
-      desc: `Rescue-${d.source_id || 'A'} did not receive return ACK within configured deadline (${d.timeout_sec || 5}s).`,
+      desc: `${formatNodeName(d.source_id || 'A')} did not receive return ACK within configured deadline (${d.timeout_sec || 5}s).`,
       category: 'alert'
     };
   }
   if (t === 'ACK_RECEIVED_LATE') {
     return {
       title: 'Delayed Hospital ACK Accepted',
-      desc: `Rescue-${d.source_id || 'A'} received delayed return ACK after deadline expiration (RTT: ${d.rtt_ms || '0'}ms). Status transitioned to LATE_CONFIRMED.`,
+      desc: `${formatNodeName(d.source_id || 'A')} received delayed return ACK after deadline expiration (RTT: ${d.rtt_ms || '0'}ms). Status transitioned to LATE_CONFIRMED.`,
       category: 'warning'
     };
   }
   if (t === 'ACK_DUPLICATE_IGNORED') {
     return {
       title: 'Duplicate ACK Safely Ignored',
-      desc: `Rescue-${d.source_id || 'A'} safely ignored duplicate return ACK.`,
+      desc: `${formatNodeName(d.source_id || 'A')} safely ignored duplicate return ACK.`,
       category: 'info'
     };
   }
   if (t === 'NEIGHBOR_HELLO_SENT') {
     return {
       title: 'Heartbeat Beacon',
-      desc: `Node ${d.node_id} pinged neighbor ${d.neighbor_id}.`,
+      desc: `${formatNodeName(d.node_id)} pinged neighbor ${formatNodeName(d.neighbor_id)}.`,
       category: 'info'
     };
   }

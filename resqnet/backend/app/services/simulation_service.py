@@ -149,12 +149,13 @@ class SimulationService:
                     # Hand return ACK to engine queue for physical routing
                     self.engine.pending_messages.append(ack_packet)
 
-                # 2. Delivery of ACK at Rescue-A
-                elif packet.destination_id == "A" and isinstance(packet.payload, dict) and packet.payload.get("type") == "ack":
+                # 2. Delivery of ACK at initiating source node (e.g. A, B, C, D)
+                elif isinstance(packet.payload, dict) and packet.payload.get("type") == "ack":
                     is_valid, reason, msg_id = self._validate_ack_packet(packet)
+                    target_node = packet.destination_id
                     if not is_valid:
                         broadcaster.broadcast_sync("ACK_INVALID", {
-                            "node_id": "A",
+                            "node_id": target_node,
                             "reason": reason,
                             "packet_id": packet.packet_id,
                             "source_id": packet.source_id
@@ -163,6 +164,7 @@ class SimulationService:
                         record = self._pending_acks[msg_id]
                         curr_status = record["status"]
                         now_sim = self.engine.get_sim_time()
+                        source_id = record.get("source_id", target_node)
                         if curr_status == "PENDING":
                             record["status"] = "CONFIRMED"
                             record["confirmed_at"] = now_sim
@@ -170,7 +172,7 @@ class SimulationService:
                             record["rtt_ms"] = rtt_ms
                             broadcaster.broadcast_sync("ACK_RECEIVED", {
                                 "message_id": msg_id,
-                                "source_id": "A",
+                                "source_id": source_id,
                                 "hospital_id": packet.source_id,
                                 "rtt_ms": round(rtt_ms, 2),
                                 "status": "CONFIRMED"
@@ -182,7 +184,7 @@ class SimulationService:
                             record["rtt_ms"] = rtt_ms
                             broadcaster.broadcast_sync("ACK_RECEIVED_LATE", {
                                 "message_id": msg_id,
-                                "source_id": "A",
+                                "source_id": source_id,
                                 "hospital_id": packet.source_id,
                                 "rtt_ms": round(rtt_ms, 2),
                                 "status": "LATE_CONFIRMED"
@@ -190,12 +192,27 @@ class SimulationService:
                         elif curr_status in ("CONFIRMED", "LATE_CONFIRMED"):
                             broadcaster.broadcast_sync("ACK_DUPLICATE_IGNORED", {
                                 "message_id": msg_id,
-                                "source_id": "A",
+                                "source_id": source_id,
                                 "hospital_id": packet.source_id,
                                 "status": curr_status
                             })
+
+                # 3. Delivery of Hospital Human Triage Response at source node (e.g. A)
+                elif isinstance(packet.payload, dict) and packet.payload.get("type") in ("response", "hospital_response"):
+                    sos_msg_id = packet.payload.get("sos_message_id")
+                    response_text = packet.payload.get("message")
+                    import datetime
+                    broadcaster.broadcast_sync("HOSPITAL_RESPONSE_DELIVERED", {
+                        "sos_message_id": sos_msg_id,
+                        "hospital_id": packet.source_id,
+                        "source_id": packet.destination_id,
+                        "message": response_text,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    })
         elif event_str == "RREQ_REACHED_DESTINATION":
             event_type = "RREQ_RECEIVED"
+        elif event_str in ("RREQ_CONSUMED", "RERR_CONSUMED"):
+            event_type = event_str
         elif event_str == "PACKET_DROPPED":
             event_type = "DATA_DROPPED" if packet and packet.packet_type.name == "DATA" else "PACKET_DROPPED"
         elif event_str.startswith("RREQ_BROADCAST"):
@@ -271,11 +288,15 @@ class SimulationService:
         if event_type == "DATA_CREATED":
             self.metrics["packets_sent"] += 1
         elif event_type == "DATA_DELIVERED":
-            self.metrics["packets_delivered"] += 1
-            if packet:
-                self.metrics["total_hop_count"] += packet.hop_count
+            is_ack = packet and isinstance(packet.payload, dict) and packet.payload.get("type") == "ack"
+            if not is_ack:
+                self.metrics["packets_delivered"] += 1
+                if packet:
+                    self.metrics["total_hop_count"] += packet.hop_count
         elif event_type == "DATA_DROPPED":
-            self.metrics["packets_dropped"] += 1
+            is_ack = packet and isinstance(packet.payload, dict) and packet.payload.get("type") == "ack"
+            if not is_ack:
+                self.metrics["packets_dropped"] += 1
         elif event_type == "RREQ_GENERATED":
             self.metrics["rreq_count"] += 1
         elif event_type == "RREP_GENERATED":
@@ -284,7 +305,17 @@ class SimulationService:
             self.metrics["rerr_count"] += 1
 
         if event_type in ("ROUTE_DISCOVERY_COMPLETED", "FORWARD_ROUTE_INSTALLED", "ROUTE_INVALIDATED", "NODE_FAILED", "NODE_RECOVERED", "LINK_FAILED", "LINK_RECOVERED"):
-            data["active_route"] = self.get_active_route("A", "H")
+            active = self.get_active_route("A", "H")
+            if active or event_type in ("ROUTE_DISCOVERY_COMPLETED", "ROUTE_INVALIDATED", "NODE_FAILED", "LINK_FAILED"):
+                data["active_route"] = active
+
+        # Avoid redundant generic DATA_DELIVERED when semantic SOS_DELIVERED, ACK_RECEIVED, or HOSPITAL_RESPONSE_DELIVERED was emitted
+        if event_type == "DATA_DELIVERED":
+            is_ack = packet and isinstance(packet.payload, dict) and packet.payload.get("type") == "ack"
+            is_sos = packet and packet.destination_id == "H" and isinstance(packet.payload, dict) and packet.payload.get("type") == "sos"
+            is_resp = packet and isinstance(packet.payload, dict) and packet.payload.get("type") in ("response", "hospital_response")
+            if is_ack or is_sos or is_resp:
+                return
 
         broadcaster.broadcast_sync(event_type, data)
 
@@ -293,6 +324,9 @@ class SimulationService:
         curr = source_id
         route = [curr]
         visited = {curr}
+        curr_node = self.topology.get_node_by_id(curr)
+        if not curr_node or not curr_node.is_active:
+            return []
         while curr in self.routers and self.routers[curr].has_valid_route(destination_id):
             nxt = self.routers[curr].get_next_hop(destination_id)
             if not nxt or nxt in visited:
@@ -300,9 +334,13 @@ class SimulationService:
             node_nxt = self.topology.get_node_by_id(nxt)
             if not node_nxt or not node_nxt.is_active:
                 return []
+            link = self.topology.get_link(curr_node.ip_address, node_nxt.ip_address)
+            if not link or not link.is_active:
+                return []
             route.append(nxt)
             visited.add(nxt)
             curr = nxt
+            curr_node = node_nxt
             if curr == destination_id:
                 return route
         return []
@@ -363,7 +401,8 @@ class SimulationService:
                     event_type = "LINK_RECOVERED" if is_active else "LINK_FAILED"
                     broadcaster.broadcast_sync(event_type, {
                         "node_a_id": node_a_id,
-                        "node_b_id": node_b_id
+                        "node_b_id": node_b_id,
+                        "active_route": self.get_active_route("A", "H")
                     })
                 return True
         return False
@@ -394,18 +433,16 @@ class SimulationService:
 
     def _validate_ack_packet(self, packet: Packet) -> Tuple[bool, str, Optional[str]]:
         """
-        Validates that an ACK received at Rescue-A conforms to all protocol requirements:
+        Validates that an ACK received conforms to protocol requirements:
         1. packet_type is DATA
-        2. destination_id is 'A'
-        3. source_id is 'H'
-        4. payload is dict with type == 'ack'
-        5. ack_for_message_id is non-empty string
-        6. ack_for_message_id matches an SOS previously initiated by Rescue-A
+        2. payload is dict with type == 'ack'
+        3. ack_for_message_id is non-empty string
+        4. ack_for_message_id matches a registered pending SOS
+        5. destination_id matches the initiating node
+        6. source_id matches the destination node (hospital)
         """
         if packet.packet_type != PacketType.DATA:
             return False, "PACKET_TYPE_NOT_DATA", None
-        if packet.destination_id != "A":
-            return False, "DESTINATION_NOT_A", None
         if packet.source_id != "H":
             return False, "SOURCE_NOT_H", None
         if not isinstance(packet.payload, dict) or packet.payload.get("type") != "ack":
@@ -415,6 +452,9 @@ class SimulationService:
             return False, "MISSING_MESSAGE_ID", None
         if msg_id not in self._pending_acks:
             return False, "UNKNOWN_MESSAGE_ID", msg_id
+        record = self._pending_acks[msg_id]
+        if packet.destination_id != record["source_id"]:
+            return False, "DESTINATION_MISMATCH", msg_id
         return True, "VALID", msg_id
 
     def send_sos(self, sos_request: dict) -> dict:
@@ -424,8 +464,9 @@ class SimulationService:
         src_id = sos_request.get("source_id", "A")
         dest_id = sos_request.get("destination_id", "H")
         timeout_seconds = float(sos_request.get("timeout_seconds", 5.0))
+        auto_discover = sos_request.get("auto_discover", False)
 
-        # Register in Node A's pending ACKs with logical deadline
+        # Register in initiating node's pending ACKs with logical deadline
         now_sim = self.engine.get_sim_time()
         self._pending_acks[message_id] = {
             "message_id": message_id,
@@ -438,6 +479,23 @@ class SimulationService:
             "confirmed_at": None,
             "rtt_ms": None
         }
+
+        # If auto_discover requested and no valid route exists (or current next hop is inactive), complete route discovery first
+        if auto_discover and src_id in self.routers:
+            active_path = self.get_active_route(src_id, dest_id)
+            needs_disc = len(active_path) == 0
+            if not needs_disc:
+                nh = self.routers[src_id].get_next_hop(dest_id)
+                src_node = self.topology.get_node_by_id(src_id)
+                active_nh = [n.node_id for n in self.topology.get_active_neighbors(src_node.ip_address)] if src_node else []
+                if nh not in active_nh:
+                    self.routers[src_id].handle_link_failure(nh)
+                    needs_disc = True
+            if needs_disc:
+                if self.routers[src_id].has_valid_route(dest_id):
+                    self.routers[src_id].routing_table.invalidate_route(dest_id)
+                rreq = self.routers[src_id].initiate_route_discovery(dest_id)
+                self.engine.send_packet(rreq)
 
         payload = {
             "type": "sos",
@@ -475,6 +533,10 @@ class SimulationService:
 
         result["message_id"] = message_id
         result["ack_status"] = self._pending_acks[message_id]["status"]
+        result["confirmed_at"] = self._pending_acks[message_id].get("confirmed_at")
+        result["rtt_ms"] = self._pending_acks[message_id].get("rtt_ms")
+        result["active_route"] = self.get_active_route(src_id, dest_id)
+        result["status"] = "success" if result.get("success") else "failed"
         return result
 
     def advance_sim_time(self, seconds: float) -> List[str]:

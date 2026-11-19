@@ -50,6 +50,11 @@ class SimulationEngine:
         Simulates the journey of a packet from its current_node to its destination_id.
         Adds to pending messages queue and processes until empty.
         """
+        self.pending_messages.clear()
+        for router in self.routers.values():
+            if hasattr(router, 'generated_packets'):
+                router.generated_packets.clear()
+
         self._log_event("PACKET_CREATED", packet)
         if packet.packet_type.name == "RREQ":
             self._log_event("RREQ_CREATED", packet)
@@ -107,10 +112,13 @@ class SimulationEngine:
             
         if not next_hops:
             if packet.status not in [PacketStatus.DELIVERED, PacketStatus.DROPPED, PacketStatus.FAILED]:
+                if packet.packet_type.name in ["RREQ", "RERR"]:
+                    packet.status = PacketStatus.DELIVERED
+                    self._log_event(f"{packet.packet_type.name}_CONSUMED", packet)
+                    return
                 packet.mark_dropped()
                 # For static router tests compatibility
-                if packet.packet_type.name not in ["RREQ", "RERR"]:
-                    self._log_event("NEXT_HOP_UNAVAILABLE", packet)
+                self._log_event("NEXT_HOP_UNAVAILABLE", packet)
                 self._log_event("PACKET_DROPPED", packet)
             return
             

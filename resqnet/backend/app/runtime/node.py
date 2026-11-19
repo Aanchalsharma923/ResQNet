@@ -50,6 +50,7 @@ class NodeRuntime:
         self._ack_timers: Dict[str, threading.Timer] = {}
         self._ack_lock = threading.Lock()
         self.processed_sos: Dict[str, dict] = {}
+        self._pending_data_packets: Dict[str, list] = {}
 
         # Build a virtual topology for the AODV router to query neighbors
         self.topology = self._build_virtual_topology()
@@ -285,6 +286,9 @@ Status: READY
             "priority": payload["priority"],
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
+        if not self.router.has_valid_route(dest_id):
+            rreq = self.router.initiate_route_discovery(dest_id)
+            self._dispatch_packet(rreq)
         self.send_data(dest_id, payload)
         return {
             "success": True,
@@ -401,6 +405,12 @@ Status: READY
                     "node_id": self.node_id,
                     **data_map
                 })
+                # Flush pending packets queued waiting for route discovery to this destination
+                dest = data_map.get("dest")
+                if dest and hasattr(self, '_pending_data_packets') and dest in self._pending_data_packets:
+                    pending_list = self._pending_data_packets.pop(dest, [])
+                    for pending_pkt in pending_list:
+                        threading.Thread(target=self._process_packet, args=[pending_pkt], daemon=True).start()
             elif ev.startswith("RERR_GENERATED:"):
                 self._emit_event("RERR_GENERATED", {
                     "node_id": self.node_id,
@@ -561,6 +571,18 @@ Status: READY
                                 "hospital_id": packet.source_id,
                                 "status": curr_status
                             })
+
+                # Check for Hospital Human Triage Response at source node (e.g. Rescue-A)
+                elif isinstance(packet.payload, dict) and packet.payload.get("type") in ("response", "hospital_response"):
+                    sos_msg_id = packet.payload.get("sos_message_id")
+                    response_text = packet.payload.get("message")
+                    self._emit_event("HOSPITAL_RESPONSE_DELIVERED", {
+                        "sos_message_id": sos_msg_id,
+                        "hospital_id": packet.source_id,
+                        "source_id": self.node_id,
+                        "message": response_text,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
                 return
             elif packet.packet_type == PacketType.RREQ:
                 packet.mark_delivered()
@@ -617,6 +639,14 @@ Status: READY
             self.transport.send(packet, next_hops)
         else:
             if packet.packet_type == PacketType.DATA and packet.status != PacketStatus.DELIVERED:
+                # If we are the source and active neighbors exist, buffer packet pending route discovery
+                if packet.source_id == self.node_id and not self.router.has_valid_route(packet.destination_id):
+                    my_node = self.topology.get_node_by_id(self.node_id)
+                    active_neighbors = [n.node_id for n in self.topology.get_active_neighbors(my_node.ip_address)] if my_node else []
+                    if active_neighbors:
+                        self._pending_data_packets.setdefault(packet.destination_id, []).append(packet)
+                        logger.info(f"[{self.node_id}] Queued pending DATA packet for {packet.destination_id} awaiting route discovery")
+                        return
                 packet.mark_dropped()
                 logger.warning(f"[{self.node_id}] DATA packet dropped: no next hop to {packet.destination_id}")
                 self._emit_event("DATA_DROPPED", {

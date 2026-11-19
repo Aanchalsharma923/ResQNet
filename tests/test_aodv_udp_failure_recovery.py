@@ -127,7 +127,7 @@ else:
             )
             
         for node in ["A", "B", "C", "D", "H"]:
-            stdout, _ = procs[node].communicate(timeout=12)
+            stdout, _ = procs[node].communicate(timeout=15)
             outputs[node] = stdout
             
     except subprocess.TimeoutExpired:

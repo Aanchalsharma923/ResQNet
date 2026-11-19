@@ -34,6 +34,21 @@ class MessageSendRequest(BaseModel):
     source: str
     destination: str
     message: str
+    sos_message_id: Optional[str] = None
+
+class HospitalResponseRequest(BaseModel):
+    source_id: Optional[str] = None
+    destination_id: Optional[str] = None
+    source: Optional[str] = None
+    destination: Optional[str] = None
+    message: str
+    sos_message_id: Optional[str] = None
+
+    def get_source(self) -> str:
+        return self.source_id or self.source or "H"
+
+    def get_destination(self) -> str:
+        return self.destination_id or self.destination or "A"
 
 class SOSMessageRequest(BaseModel):
     source_id: str
@@ -44,6 +59,7 @@ class SOSMessageRequest(BaseModel):
     priority: Optional[str] = "HIGH"
     message_id: Optional[str] = None
     timeout_seconds: Optional[float] = 5.0
+    auto_discover: Optional[bool] = False
 
 
 class RouteHistoryItem(BaseModel):
@@ -66,6 +82,11 @@ class MessageSendResponse(BaseModel):
     packet: Optional[PacketResponse]
     message_id: Optional[str] = None
     ack_status: Optional[str] = None
+    status: Optional[str] = "success"
+    rtt_ms: Optional[float] = None
+    confirmed_at: Optional[float] = None
+    active_route: Optional[List[str]] = None
+    error: Optional[str] = None
 
 class MetricsResponse(BaseModel):
     packets_sent: int

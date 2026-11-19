@@ -29,3 +29,25 @@ artifacts/wireshark/*.pcap*
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Dependencies & Package Builds
+node_modules/
+dist/
+dist-ssr/
+build/
+*.egg-info/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage
+.coverage
+htmlcov/
+coverage/
+
+# Local Environment Overrides
+.env.local
+.env.*.local

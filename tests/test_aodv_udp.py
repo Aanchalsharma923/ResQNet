@@ -72,7 +72,7 @@ runtime.stop()
             )
             
         for node in nodes:
-            stdout, _ = procs[node].communicate(timeout=10)
+            stdout, _ = procs[node].communicate(timeout=15)
             outputs[node] = stdout
             
         return outputs

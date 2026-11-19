@@ -59,6 +59,9 @@ export const useWebSocket = (url: string) => {
           if (prev.some((e) => e.event_id === data.event_id)) {
             return prev;
           }
+          if (data.type === 'SIMULATION_RESET') {
+            return [data];
+          }
           // INITIAL_STATE is a state synchronization handshake sent upon client connect.
           // Replace any older INITIAL_STATE so reconnected handshakes don't stack redundantly.
           if (data.type === 'INITIAL_STATE') {
