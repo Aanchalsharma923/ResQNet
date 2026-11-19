@@ -22,6 +22,9 @@ function App() {
       if (port && ['5173', '5174', '5175', '3000', '4173'].includes(port)) {
         return `ws://${hostname}:8000/api/ws/simulation`;
       }
+      if (hostname.includes('vercel.app')) {
+        return 'wss://3-109-210-175.sslip.io/ws';
+      }
       return `${wsProto}//${host}/ws`;
     }
     return 'ws://localhost:8000/api/ws/simulation';

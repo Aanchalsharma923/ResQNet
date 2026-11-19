@@ -52,6 +52,10 @@ const getApiBase = () => {
     if (port && ['5173', '5174', '5175', '3000', '4173'].includes(port)) {
       return `http://${hostname}:8000/api`;
     }
+    // When running on Vercel deployment, route to the live sslip backend
+    if (hostname.includes('vercel.app')) {
+      return 'https://3-109-210-175.sslip.io/api';
+    }
     // In production behind Nginx/reverse proxy on standard port 80/443 or domain, use same-origin /api
     return `${protocol}//${host}/api`;
   }
